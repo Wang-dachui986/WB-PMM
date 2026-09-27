@@ -1,0 +1,39 @@
+# Local credentials and runtime data
+**/auths/
+**/data/
+**/backups/
+**/config.json
+**/gateway-config.json
+**/.apikey
+**/.env
+**/.env.*
+*.key
+*.pem
+*.log
+*.pid
+
+# Dependencies and build output
+**/node_modules/
+**/dist/
+!panel/internal/webui/dist/
+panel/internal/webui/dist/*
+!panel/internal/webui/dist/.gitkeep
+**/__pycache__/
+**/*.pyc
+**/*.tsbuildinfo
+**/.build/
+build/
+release/
+releases/
+bin/
+*.app/
+*.dmg
+*.zip
+**/xcuserdata/
+**/DerivedData/
+
+# Editor and filesystem metadata
+.DS_Store
+._*
+.idea/
+.vscode/

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  本应用**不分发 App Store**，且必须做到三件事：
+	    1. 启动 Bundle 内的两个 Go helper 子进程（Contents/Helpers/wbgui、wb2api）
+	    2. 读写 ~/Library/Application Support/ 与 ~/Library/Logs/ 下的数据与日志目录
+	    3. 在 127.0.0.1 上监听回环端口
+	  App Sandbox 会阻断第 1、2 项（子进程启动与用户目录写入都需额外授权，
+	  且授权粒度无法覆盖「helper 自己再写 auths 目录」这条链路），因此显式关闭。
+
+	  这是有意识的取舍，不是遗漏：数据目录权限已由 AppPaths.prepare() 强制为 0700
+	  并在创建后回读校验，账号凭证不会因为不开沙盒而被同机其他用户读到。
+	-->
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+</dict>
+</plist>
