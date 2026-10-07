@@ -74,7 +74,7 @@ func TestDesktopConfigProjectionAndExactRestore(t *testing.T) {
 	s := newDesktopConfigFixture(t, desktopConfigFixture)
 	before := readDesktopFixture(t, s)
 	if before.Revision != configRevision([]byte(localDesktopConfig(s))) || !before.KeyConfigured ||
-		before.Editable.Port != 7863 || before.Editable.Upstream.TimeoutSeconds != 120 ||
+		before.Editable.Port != 7863 || before.Editable.AllowLAN || before.SafeSummary.ListenHost != "127.0.0.1" || before.Editable.Upstream.TimeoutSeconds != 120 ||
 		before.Editable.Upstream.HeaderTimeoutSeconds != 120 || before.Editable.Upstream.IdleTimeoutSeconds != 300 ||
 		before.Editable.Pool.MaxInFlight != 3 || !before.Editable.SessionSticky.Enabled ||
 		before.Editable.SessionSticky.TTL != "30m" || before.Editable.Desktop.ProxyURL != "" ||
@@ -153,6 +153,73 @@ func TestDesktopConfigProjectionAndExactRestore(t *testing.T) {
 	}
 }
 
+func TestDesktopConfigLANEnableAndRestore(t *testing.T) {
+	for _, patch := range []string{
+		`{"port":9000,"allow_lan":true}`,
+		`{"allow_lan":true,"port":9000}`,
+	} {
+		t.Run(patch, func(t *testing.T) {
+			s := newDesktopConfigFixture(t, desktopConfigFixture)
+			before := readDesktopFixture(t, s)
+			tx := mustPrepareDesktop(t, s, patch)
+			candidate, err := configObject(s.active.candidate)
+			if err != nil || candidate["allow_lan"] != nil || string(candidate["listen"]) != `"0.0.0.0:9000"` {
+				t.Fatalf("LAN patch did not use listen as its only persisted state: %v", err)
+			}
+			after, err := s.Commit(context.Background(), tx.BackupID)
+			if err != nil || !after.Editable.AllowLAN || after.Editable.Port != 9000 || after.SafeSummary.ListenHost != "0.0.0.0" {
+				t.Fatalf("LAN commit projection mismatch: %+v, %v", after, err)
+			}
+			if current := readDesktopFixture(t, s); !current.Editable.AllowLAN || current.SafeSummary.ListenHost != "0.0.0.0" {
+				t.Fatalf("LAN read projection mismatch: %+v", current)
+			}
+			restored, err := s.Restore(context.Background(), tx.BackupID, after.Revision)
+			if err != nil || restored.Revision != before.Revision || restored.Editable.AllowLAN || restored.SafeSummary.ListenHost != "127.0.0.1" {
+				t.Fatalf("LAN rollback mismatch: %+v, %v", restored, err)
+			}
+			if raw, err := os.ReadFile(s.path); err != nil || string(raw) != localDesktopConfig(s) {
+				t.Fatalf("LAN rollback was not byte exact: %v", err)
+			}
+		})
+	}
+}
+
+func TestDesktopConfigLANPortPreservedAndDisabled(t *testing.T) {
+	s := newDesktopConfigFixture(t, desktopConfigFixture)
+	for _, step := range []struct {
+		patch string
+		host  string
+		port  int
+	}{
+		{`{"allow_lan":true}`, "0.0.0.0", 7863},
+		{`{"port":9001}`, "0.0.0.0", 9001},
+		{`{"allow_lan":false}`, "127.0.0.1", 9001},
+	} {
+		tx := mustPrepareDesktop(t, s, step.patch)
+		view, err := s.Commit(context.Background(), tx.BackupID)
+		if err != nil || view.Editable.AllowLAN != (step.host == "0.0.0.0") || view.Editable.Port != step.port || view.SafeSummary.ListenHost != step.host {
+			t.Fatalf("patch %s changed listen incorrectly: %+v, %v", step.patch, view, err)
+		}
+		if err := s.Finish(tx.BackupID); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestDesktopConfigLANRejectsInvalidHostsAndBlankKey(t *testing.T) {
+	for _, host := range []string{"localhost", "127.0.0.2", "0.0.0.1", "192.168.1.1", "[::1]"} {
+		raw := strings.Replace(desktopConfigFixture, "127.0.0.1:7863", host+":7863", 1)
+		if _, err := desktopConfigProjection([]byte(raw)); !errors.Is(err, ErrDesktopConfigInvalid) {
+			t.Errorf("accepted unsupported listen host %q: %v", host, err)
+		}
+	}
+	raw := strings.Replace(desktopConfigFixture, "127.0.0.1:7863", "0.0.0.0:7863", 1)
+	raw = strings.Replace(raw, "FAKE_CONFIG_KEY_DO_NOT_EXPORT", "", 1)
+	if _, err := desktopConfigProjection([]byte(raw)); !errors.Is(err, ErrDesktopConfigInvalid) {
+		t.Fatalf("accepted LAN listener without API key: %v", err)
+	}
+}
+
 func TestDesktopConfigCheckinScheduleProjectionAndCommit(t *testing.T) {
 	s := newDesktopConfigFixture(t, desktopConfigFixture)
 	before := readDesktopFixture(t, s)
@@ -191,7 +258,7 @@ func TestDesktopConfigRejectsInvalidPatchesWithoutBackup(t *testing.T) {
 	s := newDesktopConfigFixture(t, desktopConfigFixture)
 	revision := readDesktopFixture(t, s).Revision
 	patches := []string{
-		``, `null`, `[]`, `{}`, `{"port":null}`, `{"port":1023}`, `{"port":65536}`, `{"port":"9000"}`, `{"port":9000.0}`, `{"port":1e4}`, `{"port":1e309}`, `{"port":NaN}`, `{"port":9000,"port":9001}`,
+		``, `null`, `[]`, `{}`, `{"port":null}`, `{"port":1023}`, `{"port":65536}`, `{"port":"9000"}`, `{"port":9000.0}`, `{"port":1e4}`, `{"port":1e309}`, `{"port":NaN}`, `{"port":9000,"port":9001}`, `{"allow_lan":null}`, `{"allow_lan":"true"}`, `{"allow_lan":1}`,
 		`{"listen":"127.0.0.1:9000"}`, `{"api_key":"fake"}`, `{"auth_dir":"elsewhere"}`, `{"state_file":"elsewhere"}`, `{"admin":{"enabled":true}}`, `{"schedule":{"cat_enabled":true}}`, `{"unknown":false}`, `{"Port":9000}`,
 		`{"schedule":null}`, `{"schedule":{}}`, `{"schedule":{"checkin_enabled":1}}`, `{"schedule":{"checkin_enabled":null}}`,
 		`{"schedule":{"checkin_hours":[]}}`, `{"schedule":{"checkin_hours":null}}`, `{"schedule":{"checkin_hours":[-1]}}`, `{"schedule":{"checkin_hours":[24]}}`, `{"schedule":{"checkin_hours":[9,9]}}`, `{"schedule":{"checkin_hours":[true]}}`, `{"schedule":{"checkin_hours":[9.0]}}`, `{"schedule":{"checkin_hours":"9"}}`,
@@ -430,7 +497,7 @@ func TestDesktopConfigRejectsUnsafeExistingFiles(t *testing.T) {
 			case "null":
 				raw = `null`
 			case "nonloopback":
-				raw = strings.Replace(raw, "127.0.0.1", "0.0.0.0", 1)
+				raw = strings.Replace(raw, "127.0.0.1", "192.168.1.1", 1)
 			case "missing-schedules":
 				raw = strings.Replace(raw, `"checkin_enabled":false,`, "", 1)
 			case "enabled-schedule":

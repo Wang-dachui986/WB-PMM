@@ -63,6 +63,7 @@ var globalMetrics = &metricsStore{
 // total 为端到端耗时（TTFB 与生成吞吐的分母口径均由此派生）。模型名为空/"-" 时
 // 归入 "-" 键（仍计入 total，不丢弃观测）。
 func recordChatMetric(s *chatStat, total time.Duration) {
+	history.record(s, time.Now())
 	model := s.model
 	if model == "" {
 		model = "-"

@@ -170,3 +170,20 @@ export function subscribeDesktopLifecycle(receive: (event: DesktopLifecycle) => 
   window.addEventListener('workbuddy:lifecycle', listener)
   return () => window.removeEventListener('workbuddy:lifecycle', listener)
 }
+
+/** A status change is only a read trigger; native state stays behind desktop.getStatus. */
+export function subscribeDesktopGatewayStatus(receive: () => void): () => void {
+  let lastEpoch = 0n
+  const documentID = window.__workbuddyDocumentID
+  const listener = (event: Event) => {
+    const value = (event as CustomEvent).detail
+    if (!documentID || window.__workbuddyDocumentID !== documentID || value?.document_id !== documentID ||
+        typeof value?.epoch !== 'string' || !/^[1-9][0-9]{0,19}$/.test(value.epoch)) return
+    const epoch = BigInt(value.epoch)
+    if (epoch <= lastEpoch || epoch > 18446744073709551615n) return
+    lastEpoch = epoch
+    receive()
+  }
+  window.addEventListener('workbuddy:gateway-status', listener)
+  return () => window.removeEventListener('workbuddy:gateway-status', listener)
+}

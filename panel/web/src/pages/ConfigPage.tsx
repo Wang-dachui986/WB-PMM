@@ -595,10 +595,10 @@ function WebConfigPage({ session }: { session: SessionInfo }) {
 
 // Desktop drafts stay as strings: invalid/empty input must never become zero or
 // silently disappear. Only changed whitelist fields enter the transaction.
-type DesktopDraft = { port: string; timeout: string; header: string; idle: string; max: string; sticky: boolean; ttl: string; proxy: string; checkin: boolean; checkinHours: string }
+type DesktopDraft = { port: string; allowLan: boolean; timeout: string; header: string; idle: string; max: string; sticky: boolean; ttl: string; proxy: string; checkin: boolean; checkinHours: string }
 export function desktopConfigDraft(view: DesktopConfigView): DesktopDraft {
   const e = view.editable
-  return { port: String(e.port), timeout: String(e.upstream.timeout_seconds), header: String(e.upstream.header_timeout_seconds),
+  return { port: String(e.port), allowLan: e.allow_lan === true, timeout: String(e.upstream.timeout_seconds), header: String(e.upstream.header_timeout_seconds),
     idle: String(e.upstream.idle_timeout_seconds), max: String(e.pool.max_in_flight), sticky: e.session_sticky.enabled,
     ttl: e.session_sticky.ttl, proxy: e.desktop.proxy_url,
     checkin: e.schedule?.checkin_enabled ?? false, checkinHours: (e.schedule?.checkin_hours ?? [9, 21]).join(', ') }
@@ -612,6 +612,7 @@ export function desktopConfigPatch(draft: DesktopDraft, loaded: DesktopConfigVie
     return n
   }
   if (draft.port !== old.port) patch.port = integer(draft.port, 1024, 65535, '端口')
+  if (draft.allowLan !== old.allowLan) patch.allow_lan = draft.allowLan
   const upstream: Record<string, number> = {}
   for (const [field, key] of [['timeout', 'timeout_seconds'], ['header', 'header_timeout_seconds'], ['idle', 'idle_timeout_seconds']] as const) {
     if (draft[field] !== old[field]) upstream[key] = integer(draft[field], 1, 86400, '超时秒数')
@@ -732,7 +733,7 @@ function DesktopConfigPage({ session }: { session: SessionInfo }) {
   const resetDefaults = (headerOnly = false) => {
     if (!draft) return
     const values = headerOnly ? { header: draft.timeout } : { timeout: '120', header: '120', idle: '300', max: '3', sticky: true, ttl: '30m', proxy: '', checkin: true, checkinHours: '9, 21' }
-    setDraft({ ...draft, ...values }); setEdited(new Set([...edited, ...Object.keys(values) as (keyof DesktopDraft)[]])); setNotice('默认值已填入草稿，保存并应用后才生效；端口与密钥保持不变。')
+    setDraft({ ...draft, ...values }); setEdited(new Set([...edited, ...Object.keys(values) as (keyof DesktopDraft)[]])); setNotice('默认值已填入草稿，保存并应用后才生效；端口、局域网开关与密钥保持不变。')
   }
   const save = async () => {
     if (!draft || !loaded) return
@@ -759,16 +760,18 @@ function DesktopConfigPage({ session }: { session: SessionInfo }) {
   }
   if (!draft || !loaded) return <>{error && <Alert kind="error">{error}</Alert>}<Spinner label="正在读取安全配置…" />{error && <button className="btn" onClick={() => void load()}>重试读取</button>}</>
   const edit = <K extends keyof DesktopDraft>(key: K, value: DesktopDraft[K]) => { setDraft({ ...draft, [key]: value }); setEdited(new Set([...edited, key])); setNotice(null) }
-  const field = (key: Exclude<keyof DesktopDraft, 'sticky' | 'checkin'>, label: string, hint: string) => <div className="field"><label htmlFor={`config-${key}`}>{label}</label>
+  const field = (key: Exclude<keyof DesktopDraft, 'sticky' | 'checkin' | 'allowLan'>, label: string, hint: string) => <div className="field"><label htmlFor={`config-${key}`}>{label}</label>
     <input id={`config-${key}`} value={draft[key]} disabled={saving || busy || session.read_only} onChange={(e) => edit(key, e.target.value)} /><div className="desc">{hint}</div></div>
   return <>
-    <div className="page-head"><div><h1>网关配置</h1><p>仅本机监听；保存时由原生应用确认、应用并检查服务状态。</p></div>
+    <div className="page-head"><div><h1>网关配置</h1><p>{draft.allowLan ? '已选择允许局域网访问' : '仅本机监听'}；保存时由原生应用确认、应用并检查服务状态。</p></div>
       <div className="page-actions"><button className="btn" disabled={busy || saving} onClick={() => void load(dirty || conflict)}>重新读取{dirty ? '（保留草稿）' : ''}</button></div></div>
     {error && <Alert kind="error">{error}</Alert>}{notice && <Alert kind="ok">{notice}</Alert>}
     {session.read_only && <Alert kind="warn">当前为只读模式。</Alert>}
     {!loaded.key_configured && <Alert kind="warn">API 密钥尚未配置。请在「API 与模型」中通过原生确认轮换密钥。</Alert>}
     <div className="card"><div className="card-head"><h2>本机服务</h2></div>
-      {field('port', 'API 端口', '1024–65535；监听地址固定为 127.0.0.1。')}
+      {field('port', 'API 端口', draft.allowLan ? '1024–65535；开启后可从同一局域网的其他设备访问。' : '1024–65535；当前仅监听本机 127.0.0.1。')}
+      <label className="checkbox"><input type="checkbox" id="config-allowLan" checked={draft.allowLan} disabled={saving || busy || session.read_only} onChange={(e) => edit('allowLan', e.target.checked)} />允许局域网访问</label>
+      <p className="desc">默认关闭。仅在信任的 Wi-Fi 或以太网中开启；其他设备仍需使用相同的 API Key。保存并应用时，原生应用会按现有流程停启服务。系统防火墙或访客网络隔离可能阻止连接。</p>
       {field('max', '最大并发请求', '非负整数；0 表示不限制。')}
       <p>API 密钥：{loaded.key_configured ? '已配置（不在页面显示）' : '未配置'} · 自动签到：{loaded.editable.schedule?.checkin_enabled ? '已开启' : '已关闭'}</p>
       <p className="desc">WorkBuddy 国内版与国际版：未开启「自定义协议」时地址以 /v1 结尾；开启时以 /v1/chat/completions 结尾。<Link to="/api-models">查看填写说明并复制地址</Link></p>

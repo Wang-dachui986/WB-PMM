@@ -39,7 +39,8 @@ const (
 )
 
 type DesktopEditableConfig struct {
-	Port     int `json:"port"`
+	Port     int  `json:"port"`
+	AllowLAN bool `json:"allow_lan"`
 	Upstream struct {
 		TimeoutSeconds       int `json:"timeout_seconds"`
 		HeaderTimeoutSeconds int `json:"header_timeout_seconds"`
@@ -440,16 +441,18 @@ func desktopConfigProjection(raw []byte) (DesktopConfigView, error) {
 	if err := configValue(doc, "listen", &listen); err != nil {
 		return view, err
 	}
-	host, port, err := net.SplitHostPort(listen)
-	n, portErr := strconv.Atoi(port)
-	if err != nil || portErr != nil || host != "127.0.0.1" || n < 1024 || n > 65535 || strconv.Itoa(n) != port {
-		return view, invalidConfig("listen")
+	host, port, err := parseDesktopListen(listen)
+	if err != nil {
+		return view, err
 	}
-	view.Editable.Port = n
+	view.Editable.Port, view.Editable.AllowLAN = port, host == "0.0.0.0"
 	if err := configValue(doc, "api_key", &key); err != nil {
 		return view, err
 	}
 	view.KeyConfigured = strings.TrimSpace(key) != ""
+	if view.Editable.AllowLAN && !view.KeyConfigured {
+		return view, invalidConfig("api_key")
+	}
 	for _, name := range []string{"auth_dir", "state_file"} {
 		var path string
 		if err := configValue(doc, name, &path); err != nil {
@@ -575,6 +578,15 @@ func desktopConfigProjection(raw []byte) (DesktopConfigView, error) {
 	return view, nil
 }
 
+func parseDesktopListen(listen string) (string, int, error) {
+	host, port, err := net.SplitHostPort(listen)
+	n, portErr := strconv.Atoi(port)
+	if err != nil || portErr != nil || host != "127.0.0.1" && host != "0.0.0.0" || n < 1024 || n > 65535 || strconv.Itoa(n) != port {
+		return "", 0, invalidConfig("listen")
+	}
+	return host, n, nil
+}
+
 func validCheckinHours(hours []int) bool {
 	if len(hours) < 1 || len(hours) > 24 {
 		return false
@@ -629,13 +641,43 @@ func mergeDesktopPatch(doc map[string]json.RawMessage, raw []byte) error {
 	if err != nil || len(patch) == 0 {
 		return ErrDesktopConfigInvalid
 	}
-	for name, value := range patch {
-		if name == "port" {
-			var port int
-			if err := configValue(patch, name, &port); err != nil || port < 1024 || port > 65535 {
-				return invalidConfig("port")
+	var newPort int
+	_, hasPort := patch["port"]
+	if hasPort {
+		if err := configValue(patch, "port", &newPort); err != nil || newPort < 1024 || newPort > 65535 {
+			return invalidConfig("port")
+		}
+	}
+	var allowLAN bool
+	_, hasLAN := patch["allow_lan"]
+	if hasLAN {
+		if err := configValue(patch, "allow_lan", &allowLAN); err != nil {
+			return invalidConfig("allow_lan")
+		}
+	}
+	if hasPort || hasLAN {
+		var listen string
+		if err := configValue(doc, "listen", &listen); err != nil {
+			return err
+		}
+		host, port, err := parseDesktopListen(listen)
+		if err != nil {
+			return err
+		}
+		if hasPort {
+			port = newPort
+		}
+		if hasLAN {
+			if allowLAN {
+				host = "0.0.0.0"
+			} else {
+				host = "127.0.0.1"
 			}
-			doc["listen"], _ = json.Marshal(net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+		}
+		doc["listen"], _ = json.Marshal(net.JoinHostPort(host, strconv.Itoa(port)))
+	}
+	for name, value := range patch {
+		if name == "port" || name == "allow_lan" {
 			continue
 		}
 		if name != "upstream" && name != "pool" && name != "session_sticky" && name != "desktop" && name != "schedule" {

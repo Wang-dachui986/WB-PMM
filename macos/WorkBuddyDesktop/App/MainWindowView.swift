@@ -12,6 +12,7 @@ import AppKit
 struct MainWindowView: View {
 
     @EnvironmentObject private var services: ServiceManager
+    @Environment(\.openWindow) private var openWindow
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -24,6 +25,7 @@ struct MainWindowView: View {
         .frame(minWidth: 960, minHeight: 640)
         .background(DesktopPalette.workspace(colorScheme))
         .background(WindowIdentifierAccessor(identifier: AppDelegate.mainWindowID))
+        .onAppear { AppDelegate.reopenMainWindow = { openWindow(id: AppDelegate.mainWindowID) } }
     }
 }
 

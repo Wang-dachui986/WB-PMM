@@ -69,13 +69,16 @@ enum NativeBridge {
         guard Set(p.keys) == ["revision", "patch"], let patch = p["patch"] as? [String: Any],
               !patch.isEmpty, JSONSerialization.isValidJSONObject(patch),
               let raw = try? JSONSerialization.data(withJSONObject: patch), raw.count <= 16384,
-              Set(patch.keys).isSubset(of: ["port", "upstream", "pool", "session_sticky", "desktop", "schedule"]) else { return nil }
+              Set(patch.keys).isSubset(of: ["port", "allow_lan", "upstream", "pool", "session_sticky", "desktop", "schedule"]) else { return nil }
         func integer(_ value: Any, _ range: ClosedRange<Int>) -> Bool {
             guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
                   let value = Int(exactly: number.doubleValue) else { return false }
             return range.contains(value)
         }
         if let value = patch["port"], !integer(value, 1024...65535) { return nil }
+        if let value = patch["allow_lan"] {
+            guard let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
+        }
         if let value = patch["upstream"] {
             guard let dict = value as? [String: Any], !dict.isEmpty,
                   Set(dict.keys).isSubset(of: ["timeout_seconds", "header_timeout_seconds", "idle_timeout_seconds"]),
@@ -263,7 +266,7 @@ enum NativeBridge {
         switch request.action {
         case "desktop.getStatus":
             // 状态响应不携带进程原始输出、路径、Cookie 或内部口令。
-            let keys: Set<String> = ["gateway_state", "panel_state", "api_port", "api_base_url",
+            let keys: Set<String> = ["gateway_state", "panel_state", "api_port", "api_base_url", "lan_enabled", "lan_api_base_urls",
                                      "instance_id", "updated_at", "busy", "panel_port", "uptime_seconds", "lifecycle_epoch",
                                      "healthy_accounts", "total_accounts", "maintenance_generation", "maintenance_action", "maintenance_phase"]
             return success(request.id, ["protocol": protocolVersion,

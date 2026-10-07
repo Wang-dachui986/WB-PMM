@@ -98,6 +98,7 @@ func (s *Server) Handler() http.Handler {
 	// ── 模型 / 聊天测试台 ─────────────────────────────────
 	mux.HandleFunc("GET /api/models", s.handleModels)
 	// ── 请求统计（按模型聚合，数据源为网关 /v1/stats）─────
+	mux.HandleFunc("GET /api/token-history", s.handleTokenHistory)
 	mux.HandleFunc("GET /api/stats", s.handleStats)
 	mux.HandleFunc("POST /api/stats/reset", s.handleStatsReset)
 	// 官方价格表编辑（统计页换算用）
@@ -941,4 +942,13 @@ func (s *Server) withLogging(next http.Handler) http.Handler {
 			log.Printf("%s %s → %d (%s)", r.Method, path, rec.status, time.Since(start).Round(time.Millisecond))
 		}
 	})
+}
+
+func (s *Server) handleTokenHistory(w http.ResponseWriter, r *http.Request) {
+	data, err := s.svc.Gateway().TokenHistory(r.Context(), r.URL.Query().Get("from"), r.URL.Query().Get("to"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, data)
 }

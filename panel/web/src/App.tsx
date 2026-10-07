@@ -1,4 +1,4 @@
-import { desktopCommand, hasDesktopBridge, reconnectDesktop } from './desktopBridge'
+import { desktopCommand, hasDesktopBridge, reconnectDesktop, subscribeDesktopGatewayStatus } from './desktopBridge'
 // App.tsx 应用外壳：登录门禁 + 侧边导航 + 路由。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -7,8 +7,10 @@ import { api, setUnauthorizedHandler } from './api'
 import type { SessionInfo } from './types'
 import { Alert, Badge, gatewayStatusBadge, Spinner } from './ui'
 import Login from './pages/Login'
+import GuidePopover from './GuidePopover'
 import Dashboard from './pages/Dashboard'
 import StatsPage from './pages/StatsPage'
+import TokenPage from './pages/TokenPage'
 import Accounts from './pages/Accounts'
 import LoginWizard from './pages/LoginWizard'
 import Playground from './pages/Playground'
@@ -98,6 +100,7 @@ const NAV_GROUPS: { id: string; title: string; items: NavItem[] }[] = [
       { to: '/login', label: '添加账号', icon: 'add' },
       { to: '/playground', label: '聊天测试', icon: 'chat' },
       { to: '/stats', label: '请求统计', icon: 'stats' },
+      { to: '/tokens', label: 'Token 统计', icon: 'stats' },
     ],
   },
   {
@@ -191,18 +194,35 @@ function Shell({
   const [firstRunBusy, setFirstRunBusy] = useState(false)
   const [firstRunAutoStart, setFirstRunAutoStart] = useState(false)
   const [firstRunStep, setFirstRunStep] = useState(0)
+  const [guideReplay, setGuideReplay] = useState(false)
   const [readiness, setReadiness] = useState<Record<string, unknown> | null>(null)
   const [nativeStatus, setNativeStatus] = useState<Record<string, unknown>>({})
   const [firstRunNotice, setFirstRunNotice] = useState<string | null>(null)
   const firstRunActive = useRef(true)
   const firstRunFlight = useRef(false)
+  const guideOpen = !!preferences && (!preferences.hasCompletedFirstRun || guideReplay)
   const location = useLocation()
   useEffect(() => { firstRunActive.current = true; return () => { firstRunActive.current = false } }, [])
   useEffect(() => {
     if (!hasDesktopBridge()) return
     let active = true
-    void desktopCommand('desktop.getStatus').then(value => { if (active) setNativeStatus((value.status ?? {}) as Record<string, unknown>) }).catch(() => {})
-    return () => { active = false }
+    let busy = false
+    let pending = false
+    const read = async () => {
+      if (!active) return
+      if (busy || document.hidden) { pending = true; return }
+      busy = true; pending = false
+      try {
+        const value = await desktopCommand('desktop.getStatus')
+        if (active) setNativeStatus((value.status ?? {}) as Record<string, unknown>)
+      } catch { /* The action itself rechecks status before continuing. */ }
+      finally { busy = false; if (active && pending && !document.hidden) void read() }
+    }
+    const unsubscribe = subscribeDesktopGatewayStatus(() => void read())
+    const visible = () => { if (pending && !document.hidden) void read() }
+    document.addEventListener('visibilitychange', visible)
+    void read()
+    return () => { active = false; unsubscribe(); document.removeEventListener('visibilitychange', visible) }
   }, [location.pathname])
   const navigate = useNavigate()
   const loadPreferences = useCallback(async () => {
@@ -219,6 +239,17 @@ function Shell({
     document.documentElement.dataset.theme = theme
     document.documentElement.style.colorScheme = theme === 'system' ? 'light dark' : theme
   }, [preferences?.theme])
+  const guideStep = (step: number) => {
+    setFirstRunStep(step)
+    if (step === 0 || step === 3) navigate('/')
+    if (step === 2) navigate('/login')
+    if (step >= 4) navigate('/api-models')
+  }
+  const startGuide = () => {
+    setGuideReplay(true); setReadiness(null); setFirstRunNotice(null); setPreferenceError(null)
+    setFirstRunAutoStart(preferences?.autoStartGatewayOnLaunch ?? false)
+    guideStep(0)
+  }
   const requireRunningGateway = async () => {
     const value = await desktopCommand('desktop.getStatus')
     const status = (value.status ?? {}) as Record<string, unknown>
@@ -231,10 +262,11 @@ function Shell({
     try {
       if (!skipped) await requireRunningGateway()
       const value = await desktopCommand('preferences.update', { hasCompletedFirstRun: true,
-        autoStartGatewayOnLaunch: firstRunAutoStart }) as unknown as Preferences
+        ...(!skipped ? { autoStartGatewayOnLaunch: firstRunAutoStart } : {}) }) as unknown as Preferences
       if (!firstRunActive.current) return
-      setPreferences(value)
-      setFirstRunNotice(skipped ? '已跳过剩余首次设置；本机准备、账号及聊天测试未全部验证，可随时从侧栏继续。' : '首次设置已完成。聊天与上游可用性尚未测试，请按需手动测试。')
+      setPreferences(value); setGuideReplay(false)
+      setFirstRunNotice(skipped ? '已跳过使用引导；本机准备、账号及聊天测试未全部验证。可从仪表盘右上角重新打开。' : '首次设置已完成。使用引导已收起至仪表盘右上角；聊天与上游可用性尚未测试。')
+      if (!skipped) navigate('/')
     } catch (error) { if (firstRunActive.current) setPreferenceError(error instanceof Error ? error.message : '首次设置未保存，请重试') }
     finally { firstRunFlight.current = false; if (firstRunActive.current) setFirstRunBusy(false) }
   }
@@ -243,7 +275,7 @@ function Shell({
     firstRunFlight.current = true; setFirstRunBusy(true); setPreferenceError(null)
     try {
       await requireRunningGateway()
-      if (firstRunActive.current) setFirstRunStep(4)
+      if (firstRunActive.current) guideStep(4)
     } catch (error) { if (firstRunActive.current) setPreferenceError(error instanceof Error ? error.message : '无法读取 API 状态') }
     finally { firstRunFlight.current = false; if (firstRunActive.current) setFirstRunBusy(false) }
   }
@@ -260,7 +292,7 @@ function Shell({
         const value = await desktopCommand('desktop.checkReadiness')
         if (firstRunActive.current) {
           setReadiness(value)
-          if (advance && value.ready === true) setFirstRunStep(2)
+          if (advance && value.ready === true) guideStep(2)
         }
       }
     } catch (error) { if (firstRunActive.current) setPreferenceError(error instanceof Error ? error.message : '本机操作未完成') }
@@ -268,7 +300,7 @@ function Shell({
   }
   const firstRunAccountDone = async () => {
     const value = await onSessionRefresh()
-    if (firstRunActive.current && firstRunStep === 2) setFirstRunStep(3)
+    if (firstRunActive.current && guideOpen && firstRunStep === 2) guideStep(3)
     return value
   }
   const warnings = useMemo(() => {
@@ -301,6 +333,7 @@ function Shell({
               {group.items.filter((item) => !item.desktop || hasDesktopBridge()).map((item) => (
                 <NavLink
                   key={item.to}
+                  data-guide-nav={item.to}
                   to={item.to}
                   end={item.end}
                   className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
@@ -340,35 +373,15 @@ function Shell({
       <main className="main" id="main-content" tabIndex={-1}>
         {preferenceError && <Alert kind="error">{preferenceError} <button className="btn btn-sm" onClick={() => void loadPreferences()}>重试</button></Alert>}
         {firstRunNotice && <Alert kind="info" onClose={() => setFirstRunNotice(null)}>{firstRunNotice}</Alert>}
-        {preferences && !preferences.hasCompletedFirstRun && <div className="card">
-          <div className="card-head"><h2>首次使用 · {firstRunStep + 1}/5</h2><span className="hint">{['欢迎', '本机准备', '添加账号', '启动服务', '客户端接入'][firstRunStep]}</span></div>
-          {firstRunStep === 0 && <><p>本应用在本机运行管理面板和 API 网关。以下设置不会自动发送模型请求。</p><button className="btn btn-primary" onClick={() => setFirstRunStep(1)}>开始设置</button></>}
-          {firstRunStep === 1 && <><p>检查内置程序、私有目录和已提交的 API 端口。</p>
-            {readiness && <><p>检查时间：{String(readiness.checked_at)}；端口 {String(readiness.port ?? '未知')}：{({ free: '可用', owned: '当前应用正在使用', occupied: '其他程序占用', unavailable: '系统检查失败' } as Record<string, string>)[String(readiness.port_result)] ?? '未检查'}</p>
-              <p>{readiness.ready ? '本机准备已通过' : '本机准备未通过，请调整配置或重试'}</p>
-              <ul>{((readiness.checks ?? []) as { check: string; result: string }[]).map(item => <li key={item.check}>{item.check}：{item.result === 'ok' ? '已通过' : item.result}</li>)}</ul>
-              {readiness.config_result !== 'ok' && <p>配置检查：{String(readiness.config_result)}</p>}</>}
-            <div className="page-actions"><button className="btn" disabled={firstRunBusy} onClick={() => void firstRunCheck()}>检查本机准备</button><button className="btn" onClick={() => navigate('/config')}>打开网关设置修改端口</button>
-              <button className="btn btn-primary" disabled={firstRunBusy || readiness?.ready !== true} onClick={() => void firstRunCheck(false, true)}>下一步</button></div></>}
-          {firstRunStep === 2 && <><p>可以添加账号，或先完成本机设置。跳过账号后 API 进程可运行，但没有可用账号时不能调用模型。</p><div className="page-actions"><button className="btn btn-primary" onClick={() => navigate('/login')}>添加账号</button><button className="btn" onClick={() => setFirstRunStep(3)}>跳过账号，继续</button></div></>}
-          {firstRunStep === 3 && <><p>当前 API 状态：<Badge cls={firstRunGatewayStatus.cls}>{firstRunGatewayStatus.text}</Badge>。{nativeStatus.gateway_state === 'running_unavailable' ? '进程正在运行，但当前没有可用账号；上游尚未测试。' : '进程启动成功不等于上游可用。'}</p>
-            <div className="page-actions"><button className="btn btn-primary" disabled={firstRunBusy || isGatewayRunning(nativeStatus)} onClick={() => void firstRunCheck(true)}>启动 API 服务</button>
-              <button className="btn" onClick={() => navigate('/config')}>查看网关设置</button><button className="btn" disabled={firstRunBusy || !isGatewayRunning(nativeStatus)} onClick={() => void continueFirstRun()}>继续接入说明</button></div></>}
-          {firstRunStep === 4 && <><p>API 地址：<span className="mono">{String(nativeStatus.api_base_url ?? '请先检查本机状态')}</span>。在 API 与模型页复制 Key；在聊天测试页手动发送请求。当前未执行聊天测试。</p>
-            <div className="page-actions"><button className="btn" onClick={() => navigate('/api-models')}>API 与模型</button><button className="btn" onClick={() => navigate('/playground')}>前往手动聊天测试</button></div>
-            <label className="checkbox"><input type="checkbox" checked={firstRunAutoStart} onChange={event => setFirstRunAutoStart(event.target.checked)} />下次打开应用时启动 API</label><p className="hint">不会启用 macOS 开机启动。</p>
-            <button className="btn btn-primary" disabled={firstRunBusy || !isGatewayRunning(nativeStatus)} onClick={() => void finishFirstRun(false)}>完成首次设置</button></>}
-          <div className="page-actions">{firstRunStep > 0 && <button className="btn" disabled={firstRunBusy} onClick={() => setFirstRunStep(value => value - 1)}>上一步</button>}
-            <button className="btn" disabled={firstRunBusy} onClick={() => void finishFirstRun(true)}>跳过剩余设置（未测试）</button></div>
-        </div>}
         {warnings.map((w) => (
           <Alert key={w} kind="warn">
             {w}
           </Alert>
         ))}
         <Routes>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/" element={<Dashboard onStartGuide={preferences ? startGuide : undefined} guideOpen={guideOpen} />} />
           <Route path="/accounts" element={<Accounts session={session} />} />
+          <Route path="/tokens" element={<TokenPage />} />
           <Route path="/stats" element={<StatsPage session={session} />} />
           <Route path="/login" element={<LoginWizard session={session} onDone={firstRunAccountDone} />} />
           <Route path="/playground" element={<Playground />} />
@@ -380,6 +393,53 @@ function Shell({
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
+      {guideOpen && <GuidePopover
+        step={firstRunStep} title={['欢迎使用 WB-PMM', '先检查本机准备', '添加一个账号', '启动 API 服务', '复制客户端地址', '复制 API 密钥', '选择模型，完成接入'][firstRunStep]}
+        targets={[
+          ['[data-guide="entry"]', '[data-guide-nav="/"]'],
+          ['[data-guide-nav="/config"]'],
+          ['[data-guide="login-action"]', '[data-guide-nav="/login"]'],
+          ['[data-guide="gateway"]', '[data-guide-nav="/"]'],
+          ['[data-guide="api-address"]', '[data-guide-nav="/api-models"]'],
+          ['[data-guide="api-key"]', '[data-guide-nav="/api-models"]'],
+          ['#api-model', '[data-guide-nav="/playground"]'],
+        ][firstRunStep]}
+        busy={firstRunBusy} onSkip={() => void finishFirstRun(true)}>
+        {preferenceError && <Alert kind="error">{preferenceError}</Alert>}
+        {firstRunStep === 0 && <><p>跟着高亮位置完成账号与 API 接入。引导不会自动发送聊天请求，任何一步都可以跳过。</p>
+          <button className="btn btn-primary" onClick={() => guideStep(1)}>开始设置</button></>}
+        {firstRunStep === 1 && <><p>先检查内置程序、数据目录和 API 端口。需要修改端口时，点击高亮的“网关配置”。</p>
+          {readiness && <><p><Badge cls={readiness.ready ? 'badge-ok' : 'badge-warn'}>{readiness.ready ? '本机准备已通过' : '本机准备未通过'}</Badge></p>
+            <p className="hint">端口 {String(readiness.port ?? '未知')}：{({ free: '可用', owned: '当前应用正在使用', occupied: '其他程序占用', unavailable: '系统检查失败' } as Record<string, string>)[String(readiness.port_result)] ?? '未检查'}</p>
+            {!readiness.ready && <ul>{((readiness.checks ?? []) as { check: string; result: string }[]).filter(item => item.result !== 'ok').map(item => <li key={item.check}>{item.check}：{item.result}</li>)}
+              {readiness.config_result !== 'ok' && <li>配置检查：{String(readiness.config_result)}</li>}</ul>}</>}
+          <div className="page-actions"><button className="btn" disabled={firstRunBusy} onClick={() => void firstRunCheck()}>检查本机准备</button>
+            <button className="btn btn-primary" disabled={firstRunBusy || readiness?.ready !== true} onClick={() => void firstRunCheck(false, true)}>下一步</button></div>
+          <button className="btn btn-ghost btn-sm" onClick={() => navigate('/config')}>打开网关设置修改端口</button></>}
+        {firstRunStep === 2 && <><p>选择账号区域后点击“发起授权”，再打开授权页面。浮层会跟随当前授权按钮；看到“凭证已保存”后自动进入下一步。</p>
+          <p className="hint">已有账号可以直接继续。没有可用账号时，API 虽可启动，但不能调用模型。</p>
+          <div className="page-actions"><button className="btn" onClick={() => navigate('/login')}>添加账号</button>
+            <button className="btn btn-primary" onClick={() => guideStep(3)}>跳过账号，继续</button></div></>}
+        {firstRunStep === 3 && <><p>这里显示 API 地址与运行状态。点击下方按钮启动，也可使用窗口顶部的“启动”。</p>
+          <p><Badge cls={firstRunGatewayStatus.cls}>{firstRunGatewayStatus.text}</Badge></p>
+          <p className="hint">{nativeStatus.gateway_state === 'running_unavailable' ? '进程正在运行，但当前没有可用账号；上游尚未测试。' : '进程启动成功不等于上游可用。'}</p>
+          <div className="page-actions"><button className="btn btn-primary" disabled={firstRunBusy || isGatewayRunning(nativeStatus)} onClick={() => void firstRunCheck(true)}>启动 API 服务</button>
+            <button className="btn" disabled={firstRunBusy || !isGatewayRunning(nativeStatus)} onClick={() => void continueFirstRun()}>继续接入说明</button></div></>}
+        {firstRunStep === 4 && <><p>点击高亮按钮复制 Base URL，填入客户端。WorkBuddy 开启“自定义协议”时，请改用本页的“完整对话端点”。</p>
+          <p className="hint">地址填写规则取决于客户端协议，不取决于账号区域。</p>
+          <button className="btn btn-primary" onClick={() => guideStep(5)}>下一步</button></>}
+        {firstRunStep === 5 && <><p>点击“复制密钥”，粘贴到客户端的 API Key 一栏。不要使用账号登录密码，也不需要点击“轮换密钥”。</p>
+          <p className="hint">密钥通过原生剪贴板复制，不会显示在页面或教程里。</p>
+          <button className="btn btn-primary" onClick={() => guideStep(6)}>下一步</button></>}
+        {firstRunStep === 6 && <><p>选择模型并复制完整模型 ID，保留 cn: 或 global: 前缀。填好地址、密钥与模型后，就可以在客户端使用。</p>
+          <p className="hint">“聊天测试”中的真实请求可能消耗积分，需要你手动发送。</p>
+          <label className="checkbox"><input type="checkbox" checked={firstRunAutoStart} onChange={event => setFirstRunAutoStart(event.target.checked)} />下次打开应用时启动 API</label>
+          <p className="hint">登录 macOS 后自动启动可在“应用设置”单独开启。</p>
+          <div className="page-actions"><button className="btn" onClick={() => navigate('/playground')}>前往手动聊天测试</button>
+            <button className="btn btn-primary" disabled={firstRunBusy} onClick={() => void finishFirstRun(false)}>完成首次设置</button></div></>}
+        <div className="guide-footer">{firstRunStep > 0 && <button className="btn btn-ghost btn-sm" disabled={firstRunBusy} onClick={() => guideStep(firstRunStep - 1)}>上一步</button>}
+          {firstRunBusy && <Spinner label="正在处理…" />}</div>
+      </GuidePopover>}
     </div>
   )
 }

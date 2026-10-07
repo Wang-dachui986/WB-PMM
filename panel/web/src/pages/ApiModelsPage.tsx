@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
-import { desktopCommand, hasDesktopBridge } from '../desktopBridge'
+import { desktopCommand, hasDesktopBridge, subscribeDesktopGatewayStatus } from '../desktopBridge'
 import type { DesktopConfigView, Model } from '../types'
 import { Alert, modelLabel, modelName, reasoningEffortLabel, Spinner } from '../ui'
 
@@ -11,6 +11,7 @@ export function apiExample(baseURL: string, model: string): string {
 
 export default function ApiModelsPage() {
   const [config, setConfig] = useState<DesktopConfigView | null>(null)
+  const [nativeStatus, setNativeStatus] = useState<Record<string, unknown> | null>(null)
   const [models, setModels] = useState<Model[]>([])
   const [selected, setSelected] = useState('')
   const [refreshed, setRefreshed] = useState<Date | null>(null)
@@ -19,21 +20,62 @@ export default function ApiModelsPage() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const rotation = useRef<AbortController | null>(null)
+  const statusFlight = useRef<Promise<Record<string, unknown>> | null>(null)
   useEffect(() => () => { rotation.current?.abort(); rotation.current = null }, [])
+  const readStatus = useCallback(() => {
+    if (statusFlight.current) return statusFlight.current
+    const request = desktopCommand('desktop.getStatus').then(value => {
+      setNativeStatus((value.status ?? {}) as Record<string, unknown>)
+      return value
+    }, error => { setNativeStatus(null); throw error })
+    statusFlight.current = request
+    void request.then(() => { if (statusFlight.current === request) statusFlight.current = null },
+      () => { if (statusFlight.current === request) statusFlight.current = null })
+    return request
+  }, [])
   const load = useCallback(async () => {
     setBusy(true); setError(null)
-    const [configuration, list] = await Promise.allSettled([api.desktopConfig(), api.models()])
+    const [configuration, list, native] = await Promise.allSettled([api.desktopConfig(), api.models(), readStatus()])
     if (configuration.status === 'fulfilled') setConfig(configuration.value)
     if (list.status === 'fulfilled') {
       const data = list.value.data ?? []
       setModels(data); setSelected((old) => data.some((model) => model.id === old) ? old : (data[0]?.id ?? ''))
       setRefreshed(new Date())
     }
-    const failed = [configuration, list].find((result) => result.status === 'rejected')
+    const failed = [configuration, list, native].find((result) => result.status === 'rejected')
     if (failed?.status === 'rejected') setError(failed.reason instanceof Error ? failed.reason.message : '接入信息读取失败')
     setBusy(false)
-  }, [])
+  }, [readStatus])
   useEffect(() => { if (hasDesktopBridge()) void load() }, [load])
+  useEffect(() => {
+    if (!hasDesktopBridge()) return
+    let active = true
+    let busy = false
+    let pending = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const clearTimer = () => { if (timer !== undefined) clearTimeout(timer); timer = undefined }
+    const refresh = async () => {
+      if (!active) return
+      if (document.hidden || busy) { pending = true; return }
+      busy = true; pending = false; clearTimer()
+      const joined = statusFlight.current !== null
+      try { await readStatus() } catch { /* The next visible read retries status. */ }
+      finally {
+        busy = false
+        if (!active || document.hidden) return
+        if (pending || joined) void refresh()
+        else timer = setTimeout(() => void refresh(), 15_000)
+      }
+    }
+    const visibility = () => {
+      if (document.hidden) { clearTimer(); return }
+      void refresh()
+    }
+    const unsubscribe = subscribeDesktopGatewayStatus(() => void refresh())
+    document.addEventListener('visibilitychange', visibility)
+    timer = setTimeout(() => void refresh(), 15_000)
+    return () => { active = false; clearTimer(); unsubscribe(); document.removeEventListener('visibilitychange', visibility) }
+  }, [readStatus])
   const copy = async (text: string) => {
     try { await navigator.clipboard.writeText(text); setNotice('已复制') } catch { setError('复制失败，请手动选择并复制文本') }
   }
@@ -59,7 +101,7 @@ export default function ApiModelsPage() {
   const localCheck = async () => {
     setBusy(true); setError(null); setNotice(null)
     try {
-      const reply = await desktopCommand('desktop.getStatus')
+      const reply = await readStatus()
       const status = reply.status as Record<string, unknown> | undefined
       if (reply.protocol !== 1 || !status || typeof status.gateway_state !== 'string') throw new Error('本机状态响应无效')
       setNotice(`本机控制通道正常。当前网关状态：${status.gateway_state}。此检查仅读取本机状态快照，未重新检测网关 HTTP 或上游，不能证明上游模型可调用。`)
@@ -67,7 +109,13 @@ export default function ApiModelsPage() {
     finally { setBusy(false) }
   }
   if (!hasDesktopBridge()) return <Alert kind="info">接入信息与密钥操作由 macOS 桌面应用提供。</Alert>
-  const base = config ? `http://127.0.0.1:${config.editable.port}/v1` : null
+  const base = typeof nativeStatus?.api_base_url === 'string' ? nativeStatus.api_base_url
+    : config ? `http://127.0.0.1:${config.editable.port}/v1` : null
+  const lanConfigured = typeof nativeStatus?.lan_enabled === 'boolean' ? nativeStatus.lan_enabled : config?.editable.allow_lan === true
+  const lanRunning = nativeStatus?.gateway_state === 'running_ready' || nativeStatus?.gateway_state === 'running_unavailable'
+  const lanUrls = Array.isArray(nativeStatus?.lan_api_base_urls)
+    ? [...new Set((nativeStatus.lan_api_base_urls as unknown[]).filter((url): url is string => typeof url === 'string' && url.length > 0))]
+    : []
   const model = models.find((item) => item.id === selected)
   return <>
     <div className="page-head"><div><h1>API 与模型</h1><p>本机 OpenAI 兼容接入信息。密钥仅通过原生剪贴板复制。</p></div>
@@ -82,12 +130,21 @@ export default function ApiModelsPage() {
           { label: 'Anthropic Messages 端点', suffix: '/messages', button: '复制 Messages 端点' },
         ].map(({ label, suffix, button }) => <div key={suffix}>
           <dt>{label}：</dt><dd className="api-connection-address"><span className="mono" title={base ? `${base}${suffix}` : undefined}>{base ? `${base}${suffix}` : '未读取'}</span>
-            <button className="btn" disabled={!base} onClick={() => base && void copy(`${base}${suffix}`)}>{button}</button></dd>
+            <button data-guide={suffix === '' ? 'api-address' : undefined} className="btn" disabled={!base} onClick={() => base && void copy(`${base}${suffix}`)}>{button}</button></dd>
         </div>)}
         <div><dt>API 密钥：</dt><dd>{config?.key_configured ? '••••••••（已配置）' : '未配置'}</dd></div>
       </dl>
+      {lanConfigured && <div className="lan-access"><h3>局域网访问</h3>
+        {!nativeStatus ? <p>局域网状态未读取，请重新读取。</p>
+          : !lanRunning ? <p>API 服务未运行；启动后显示局域网地址。</p>
+            : nativeStatus.lan_enabled !== true ? <p>局域网访问尚未生效，请检查网关状态。</p>
+              : lanUrls.length ? lanUrls.map((url, index) => <div className="lan-address-row" key={url}>
+                <span className="mono">{url}</span><button className="btn" aria-label={`复制局域网地址 ${index + 1}`} onClick={() => void copy(url)}>复制地址</button>
+              </div>) : <p>未找到可用的局域网网卡，请连接 Wi-Fi 或以太网。</p>}
+        <p className="hint">其他设备使用局域网地址与相同的 API Key；系统防火墙或访客网络隔离可能阻止连接。</p>
+      </div>}
       <div className="page-actions">
-        <button className="btn" disabled={!config?.key_configured || keyBusy} onClick={() => void copyKey()}>复制密钥</button>
+        <button data-guide="api-key" className="btn" disabled={!config?.key_configured || keyBusy} onClick={() => void copyKey()}>复制密钥</button>
         <button className="btn btn-danger" disabled={!config || keyBusy || busy} onClick={() => void rotate()}>{keyBusy && <Spinner />}轮换密钥</button>
         {rotation.current && <button className="btn" onClick={() => rotation.current?.abort()}>取消轮换</button>}</div>
       <p className="text-faint">轮换需要原生确认，旧密钥随后失效；不会在网页中显示密钥。</p>
@@ -111,7 +168,7 @@ export default function ApiModelsPage() {
       </>}
     </div>
     <div className="card"><div className="card-head"><h2>HTTP 请求示例</h2></div>
-      {base && selected ? <><pre className="mono">{apiExample(base, selected)}</pre><button className="btn" onClick={() => void copy(apiExample(base, selected))}>复制占位密钥示例</button></> : <p>连接信息与模型读取成功后显示示例。</p>}
+      {base && selected ? <><pre className="mono api-example">{apiExample(base, selected)}</pre><button className="btn" onClick={() => void copy(apiExample(base, selected))}>复制占位密钥示例</button></> : <p>连接信息与模型读取成功后显示示例。</p>}
       <p>YOUR_API_KEY 为占位符，运行前请在自己的客户端填写。执行对话请求可能消耗上游配额或费用。</p>
     </div>
     <div className="card"><div className="card-head"><h2>连接验证</h2></div><p>本地检查仅读取原生应用的本机运行状态，不访问上游。真实对话需在聊天测试页手动发送，可能消耗上游配额或费用。</p>

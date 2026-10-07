@@ -562,3 +562,24 @@ func (c *Client) ResetStats(ctx context.Context) error {
 	}
 	return nil
 }
+
+// TokenHistory returns gateway aggregates without contacting any model provider.
+func (c *Client) TokenHistory(ctx context.Context, from, to string) (json.RawMessage, error) {
+	q := url.Values{"from": {from}, "to": {to}}
+	resp, err := c.do(ctx, http.MethodGet, "/v1/token-history?"+q.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Token 历史统计不可用（HTTP %d），请确认网关已更新并启动", resp.StatusCode)
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 128<<20))
+	if err != nil {
+		return nil, err
+	}
+	if !json.Valid(raw) {
+		return nil, fmt.Errorf("Token 历史统计格式无效")
+	}
+	return json.RawMessage(raw), nil
+}

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
+    <NoWarn>CA1416</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../WBPMM/Platform.cs" Link="Platform.cs" />
+    <Compile Include="../../WBPMM/ManagedHelper.cs" Link="ManagedHelper.cs" />
+    <Compile Include="../../WBPMM/SafeLog.cs" Link="SafeLog.cs" />
+    <Compile Include="../../WBPMM/ShortcutIdentity.cs" Link="ShortcutIdentity.cs" />
+    <Compile Include="../../WBPMM/DesktopController.cs" Link="DesktopController.cs" />
+    <Compile Include="../../WBPMM/PanelClient.cs" Link="PanelClient.cs" />
+    <Compile Include="../../WBPMM/BridgeValidation.cs" Link="BridgeValidation.cs" />
+    <Compile Include="../../WBPMM/GatewayConfiguration.cs" Link="GatewayConfiguration.cs" />
+  </ItemGroup>
+</Project>

@@ -27,8 +27,8 @@ MENU_ICON_FILE = "WBPMMMenuTemplate.png"
 BUNDLE_ID = "cn.workbuddy.desktop"
 DEPLOYMENT_TARGET = "14.0"
 SWIFT_VERSION = "6.0"
-MARKETING_VERSION = "0.1.0"
-BUILD_NUMBER = "1"
+MARKETING_VERSION = "1.0.5"
+BUILD_NUMBER = "6"
 
 # 分组 → 源文件（相对 macos/WorkBuddyDesktop/）
 GROUPS: dict[str, list[str]] = {
@@ -85,6 +85,8 @@ for name in wbgui wb2api; do
   cp -f "$SRC/$name" "$DEST/$name"
   chmod 0755 "$DEST/$name"
 done
+# PKG 安装后资源归 root；图标必须允许普通用户读取。
+chmod 0644 "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/WBPMMMenuTemplate.png"
 # 兜底清除 AppleDouble 伴生文件（打包禁止携带，见开发计划 §17.3）
 find "$DEST" -name '._*' -delete 2>/dev/null || true
 echo "helpers 已就位：$DEST"

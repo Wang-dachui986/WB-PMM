@@ -1,6 +1,6 @@
 # 从源码构建 WB-PMM
 
-本指南构建 macOS 14+、Apple Silicon 版 WB-PMM 0.1.0。源码包含 Go 网关、Go 管理面板与 React 前端，以及 SwiftUI / WKWebView 原生外壳。构建脚本会写入本机的独立构建目录；请在可用的磁盘空间充足、支持 Unix 文件权限的文件系统上运行。
+本指南构建 macOS 14+、Apple Silicon 版 WB-PMM 1.0.3。源码包含 Go 网关、Go 管理面板与 React 前端，以及 SwiftUI / WKWebView 原生外壳。构建脚本会写入本机的独立构建目录；请在可用的磁盘空间充足、支持 Unix 文件权限的文件系统上运行。
 
 ## 准备工具
 
@@ -33,26 +33,46 @@ CONFIG=Release ./scripts/verify-macos-build.sh
 
 `verify-macos-build.sh` 对其专用同步目录使用 `rsync --delete`，因此 `WB_MACOS_BUILD_DIR` 只能指向可覆盖的独立构建目录，不能指向存放个人文件的目录。可按需用 `OUT` 覆盖 Go 产物路径，并以相同目录设置 `WB_HELPERS_SRC`；`WB_MACOS_DERIVED` 可更改 Xcode 产物目录。不要把需要保留的文件放进这些构建目录。
 
-## 制作 DMG
+## 验证局域网改动
 
-构建并核对 App 后，以打包脚本制作安装镜像。`APP` 指向上一步的 `.app`；`OUT` 是专用发布输出目录；`LEGAL_DIR` 指向准备好的许可证目录；`VERSION` 决定输出文件名。
+局域网改动可用 `python3 scripts/verify-lan-runtime.py --gateway /绝对路径/wb2api --lan-ip <本机局域网IPv4>` 验证。脚本使用临时目录、空账号池和随机端口，检查开启/关闭、API Key 与仅本机管理端点，不调用真实模型。这个本机套接字检查不能替代另一台设备经过路由器和防火墙的实际连接测试。
+
+## 制作覆盖升级 PKG
+
+1.0.3 起推荐系统 PKG 安装器：固定覆盖 `/Applications/WB-PMM.app`，正常退出旧版，迁移当前登录用户 Dock 中指向旧版本的 WB-PMM 入口。账号、配置、日志不在安装 payload 中。`pkgbuild` 显式设置不可重定位和整体升级，避免安装器跟随旧 DMG 或临时目录中的 App。
+
+打包输入必须是签名验证通过、许可证齐全的 App；脚本保留输入 App 的签名和内容，不修改输入文件。当前本地发布使用临时签名，可这样准备独立副本（`WBPMM_RELEASE` 请使用新的发布目录）：
 
 ```bash
-WBPMM_LEGAL_DIR="$HOME/workbuddy2api-build/legal"
-mkdir -p "$WBPMM_LEGAL_DIR"
-cp licenses/*.txt "$WBPMM_LEGAL_DIR/"
-cp LICENSE "$WBPMM_LEGAL_DIR/WB-PMM-LICENSE.txt"
-cp THIRD_PARTY_NOTICES.md "$WBPMM_LEGAL_DIR/"
-cp gateway/LICENSE "$WBPMM_LEGAL_DIR/gateway-LICENSE.txt"
-cp panel/LICENSE "$WBPMM_LEGAL_DIR/panel-LICENSE.txt"
-
-APP="$HOME/workbuddy2api-build/macos-derived/Build/Products/Release/WB-PMM.app" \
-OUT="$HOME/workbuddy2api-build/releases/v0.1.0" \
-LEGAL_DIR="$WBPMM_LEGAL_DIR" \
-VERSION=0.1.0 \
-bash scripts/package-dmg.sh
+WBPMM_RELEASE="$HOME/workbuddy2api-build/releases/v1.0.3"
+WBPMM_APP="$WBPMM_RELEASE/app/WB-PMM.app"
+mkdir -p "$WBPMM_RELEASE/app"
+ditto "$HOME/workbuddy2api-build/macos-derived/Build/Products/Release/WB-PMM.app" "$WBPMM_APP"
+mkdir -p "$WBPMM_APP/Contents/Resources/Legal"
+cp licenses/*.txt "$WBPMM_APP/Contents/Resources/Legal/"
+cp LICENSE "$WBPMM_APP/Contents/Resources/Legal/WB-PMM-LICENSE.txt"
+cp THIRD_PARTY_NOTICES.md "$WBPMM_APP/Contents/Resources/Legal/"
+cp gateway/LICENSE "$WBPMM_APP/Contents/Resources/Legal/gateway-LICENSE.txt"
+cp panel/LICENSE "$WBPMM_APP/Contents/Resources/Legal/panel-LICENSE.txt"
+codesign --force --sign - "$WBPMM_APP/Contents/Helpers/wbgui"
+codesign --force --sign - "$WBPMM_APP/Contents/Helpers/wb2api"
+codesign --force --sign - --identifier cn.workbuddy.desktop \
+  --entitlements macos/WorkBuddyDesktop/WorkBuddyDesktop.entitlements "$WBPMM_APP"
+codesign --verify --deep --strict "$WBPMM_APP"
+APP="$WBPMM_APP" OUT="$WBPMM_RELEASE" VERSION=1.0.3 bash scripts/package-pkg.sh
 ```
 
-输出为 `WB-PMM-0.1.0-macos-arm64.dmg` 和同名 `.dmg.sha256` 文件。脚本对临时副本中的两个 helper 和 App 做临时签名，再验证 DMG、挂载内容、许可证及签名，不修改输入 App。更换 Go 工具链或升级依赖后，应同步更新 `licenses/` 中对应的许可证与第三方说明。
+输出为 `WB-PMM-1.0.3-macos-arm64.pkg` 与对应 `.pkg.sha256`。打包时会编译安装辅助工具，验证目标路径、升级属性、App 版本、架构、签名及许可证。安装前要求应用正常退出；不会强制杀死正在处理请求的 App。安装完成不自动启动 API。Dock 迁移仅更新本应用的固定或最近使用入口，未固定时不添加固定图标。
 
-0.1.0 的 DMG 使用临时签名，未进行 Apple Developer ID 签名或公证。分发时应说明这一点，并将最终 DMG 的下载来源和 SHA-256 一起提供。最终用户的安装方式见 [使用指南](USER_GUIDE.md)。
+App 签名与 PKG 签名是两回事：本地 App 使用临时签名，当前 PKG 未作 Developer ID Installer 签名，均未公证；不能把本地 `codesign --verify` 通过称为 Apple 公证。分发时同时提供下载来源与 SHA-256。如后续使用 Developer ID 签名，应在制作 PKG 前完成 App 签名，并使用安装器签名身份签署 PKG。更换 Go 工具链或依赖时同步检查 `licenses/` 与第三方声明。
+
+安装辅助工具的隔离检查（Dock 仅用合成数据；启动一个临时假应用验证正常退出，不读写真实 Dock，也不退出 WB-PMM）：
+
+```bash
+WBPMM_CHECK_DIR="$(mktemp -d)"
+xcrun swiftc -parse-as-library -swift-version 6 -D INSTALLER_HELPER_TEST scripts/installer-helper.swift \
+  scripts/verify-installer-helper.swift -o "$WBPMM_CHECK_DIR/verify-installer-helper"
+"$WBPMM_CHECK_DIR/verify-installer-helper"
+```
+
+原有 `scripts/package-dmg.sh` 仍可用于制作可选拖拽镜像，但拖拽安装不执行 PKG 的退出旧版、固定替换和 Dock 迁移步骤。需要自动覆盖升级时应分发上述 PKG。最终用户步骤见 [使用指南](USER_GUIDE.md)。

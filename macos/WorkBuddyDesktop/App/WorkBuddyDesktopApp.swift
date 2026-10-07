@@ -11,6 +11,7 @@ import CoreServices
 ///   4. 单实例与退出编排
 ///
 /// 它**不提供页面导航** —— 应用级导航只有侧栏一处（设计规范 §2.2）。
+#if !WBPMM_LIFECYCLE_CHECK
 @main
 struct WorkBuddyDesktopApp: App {
 
@@ -28,18 +29,15 @@ struct WorkBuddyDesktopApp: App {
         .commands {
             // 单窗口应用：去掉「新建」菜单组，避免出现「新建窗口」这种无意义入口。
             CommandGroup(replacing: .newItem) {}
+            CommandGroup(replacing: .appTermination) {
+                Button("转入后台") { delegate.moveToBackground() }
+                    .keyboardShortcut("q")
+            }
         }
 
-        // 菜单栏。关闭窗口后应用继续在此运行，API 服务不中断（计划 §6.1 窗口驻留）。
-        MenuBarExtra {
-            MenuBarView()
-                .environmentObject(delegate.services)
-                .environmentObject(delegate.settings)
-        } label: {
-            MenuBarLabel(services: delegate.services)
-        }
     }
 }
+#endif
 
 // MARK: - 应用委托
 
@@ -58,7 +56,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     let settings: AppSettings
     let services: ServiceManager
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
-    private var closeNotice: NSAlert?
+    private(set) var menuBar: MenuBarController?
+    private var explicitQuit = false
     private var launchPrepared = false
 
     override init() {
@@ -89,6 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard launchPrepared else { return }
+        menuBar = MenuBarController(services: services, onQuit: { [weak self] in self?.quitFromMenuBar() })
         let event = NSAppleEventManager.shared().currentAppleEvent
         let launchedAtLogin = event?.eventID == kAEOpenApplication
             && event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
@@ -111,16 +111,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             MainActor.assumeIsolated {
                 guard let self, let window,
                       window.identifier?.rawValue == Self.mainWindowID,
-                      !self.services.isShuttingDown, !self.settings.closeWindowNoticeShown else { return }
-                self.settings.closeWindowNoticeShown = true
-                DispatchQueue.main.async { [weak self] in
-                    guard let self, !self.services.isShuttingDown else { return }
-                    let alert = NSAlert(); self.closeNotice = alert
-                    alert.messageText = "应用仍在菜单栏运行"
-                    alert.informativeText = "关闭窗口不会停止 API 服务。点击菜单栏图标可重新打开窗口；选择菜单中的“退出”可完全退出并停止内置服务。"
-                    alert.addButton(withTitle: "知道了")
-                    alert.runModal(); self.closeNotice = nil
-                }
+                      !self.services.isShuttingDown else { return }
+                self.moveToBackground()
             }
         }
         observers.append((center, token))
@@ -158,16 +150,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     // MARK: 退出
 
+    /// 普通退出（Dock、⌘Q）只隐藏窗口，保留面板与 API 进程。
+    func moveToBackground() {
+        menuBar?.ensureVisible()
+        NSApp.hide(nil)
+        NSApp.setActivationPolicy(.accessory)
+    }
+
+    func quitFromMenuBar() {
+        guard !explicitQuit, !services.isShuttingDown else { return }
+        explicitQuit = true
+        // Finish async work before entering AppKit's termination event loop.
+        Task { @MainActor in
+            await services.shutdown()
+            if services.didFinishShutdown { NSApp.terminate(nil) }
+            else { explicitQuit = false }
+        }
+    }
+
+    /// 系统注销、重启或关机仍正常释放子进程，不拦截系统退出。
+    static func isSystemTermination(_ event: NSAppleEventDescriptor?) -> Bool {
+        guard let event, event.eventID == kAEQuitApplication,
+              let reason = event.paramDescriptor(forKeyword: kAEQuitReason)?.enumCodeValue else { return false }
+        return [kAEQuitAll, kAEShutDown, kAERestart, kAEReallyLogOut].contains(reason)
+    }
+
     /// 退出前先停子进程，停完再放行。
     ///
     /// 用 `.terminateLater` + `reply(toApplicationShouldTerminate:)`，而不是在主线程上同步等待：
     /// `shutdown()` 是主 actor 方法，同步等待会和它自己死锁。
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if services.didFinishShutdown { return .terminateNow }
+        if !launchPrepared || services.didFinishShutdown { return .terminateNow }
+        if explicitQuit { return .terminateCancel }
+        guard Self.isSystemTermination(NSAppleEventManager.shared().currentAppleEvent) else {
+            moveToBackground()
+            return .terminateCancel
+        }
         if services.isShuttingDown { return .terminateLater }
-
-        if let closeNotice { NSApp.abortModal(); closeNotice.window.orderOut(nil) }
-        for (center, token) in observers { center.removeObserver(token) }; observers.removeAll()
         AppLog.shared.info("收到退出请求，开始停止内置服务")
         Task { @MainActor in
             await services.shutdown()
@@ -177,6 +196,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        for (center, token) in observers { center.removeObserver(token) }; observers.removeAll()
         AppLog.shared.info("应用已退出")
     }
 

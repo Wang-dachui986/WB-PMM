@@ -231,7 +231,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -eu\n# 把两个 Go helper 拷进 Contents/Helpers/。\n# 源目录由 WB_HELPERS_SRC 指定，默认取 scripts/build.sh 的输出目录。\nSRC=\"${WB_HELPERS_SRC:-$HOME/workbuddy2api-build/bin}\"\nDEST=\"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers\"\n\n# 打包前断言：面板必须支持 --desktop。\n# 应用是按「wbgui --desktop 可用」这个契约打包的；打进一个不认识该标志的旧二进制，\n# 结果会是应用启动后静默等 10 秒再报「面板未就绪」，原因极难看出来。\n# 这一步把该错误从运行期提前到构建期。\nif [ -x \"$SRC/wbgui\" ] && ! \"$SRC/wbgui\" --help 2>&1 | grep -q -- '-desktop'; then\n  echo \"error: $SRC/wbgui 不支持 --desktop —— 它是面板补丁之前的旧产物。\" >&2\n  echo \"note: 请重新运行 scripts/build.sh 构建面板后重试。\" >&2\n  exit 1\nfi\n\nmkdir -p \"$DEST\"\nfor name in wbgui wb2api; do\n  if [ ! -x \"$SRC/$name\" ]; then\n    echo \"error: 找不到 helper：$SRC/$name\" >&2\n    echo \"note: 请先运行 scripts/build.sh，或设置 WB_HELPERS_SRC\" >&2\n    exit 1\n  fi\n  cp -f \"$SRC/$name\" \"$DEST/$name\"\n  chmod 0755 \"$DEST/$name\"\ndone\n# 兜底清除 AppleDouble 伴生文件（打包禁止携带，见开发计划 §17.3）\nfind \"$DEST\" -name '._*' -delete 2>/dev/null || true\necho \"helpers 已就位：$DEST\"\n";
+			shellScript = "set -eu\n# 把两个 Go helper 拷进 Contents/Helpers/。\n# 源目录由 WB_HELPERS_SRC 指定，默认取 scripts/build.sh 的输出目录。\nSRC=\"${WB_HELPERS_SRC:-$HOME/workbuddy2api-build/bin}\"\nDEST=\"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers\"\n\n# 打包前断言：面板必须支持 --desktop。\n# 应用是按「wbgui --desktop 可用」这个契约打包的；打进一个不认识该标志的旧二进制，\n# 结果会是应用启动后静默等 10 秒再报「面板未就绪」，原因极难看出来。\n# 这一步把该错误从运行期提前到构建期。\nif [ -x \"$SRC/wbgui\" ] && ! \"$SRC/wbgui\" --help 2>&1 | grep -q -- '-desktop'; then\n  echo \"error: $SRC/wbgui 不支持 --desktop —— 它是面板补丁之前的旧产物。\" >&2\n  echo \"note: 请重新运行 scripts/build.sh 构建面板后重试。\" >&2\n  exit 1\nfi\n\nmkdir -p \"$DEST\"\nfor name in wbgui wb2api; do\n  if [ ! -x \"$SRC/$name\" ]; then\n    echo \"error: 找不到 helper：$SRC/$name\" >&2\n    echo \"note: 请先运行 scripts/build.sh，或设置 WB_HELPERS_SRC\" >&2\n    exit 1\n  fi\n  cp -f \"$SRC/$name\" \"$DEST/$name\"\n  chmod 0755 \"$DEST/$name\"\ndone\n# PKG 安装后资源归 root；图标必须允许普通用户读取。\nchmod 0644 \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/WBPMMMenuTemplate.png\"\n# 兜底清除 AppleDouble 伴生文件（打包禁止携带，见开发计划 §17.3）\nfind \"$DEST\" -name '._*' -delete 2>/dev/null || true\necho \"helpers 已就位：$DEST\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -319,14 +319,14 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = NO;
 				EXECUTABLE_NAME = WorkBuddyDesktop;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = WorkBuddyDesktop/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks");
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 1.0.5;
 				PRODUCT_BUNDLE_IDENTIFIER = cn.workbuddy.desktop;
 				PRODUCT_NAME = "WB-PMM";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -340,14 +340,14 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = NO;
 				EXECUTABLE_NAME = WorkBuddyDesktop;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = WorkBuddyDesktop/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks");
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 1.0.5;
 				PRODUCT_BUNDLE_IDENTIFIER = cn.workbuddy.desktop;
 				PRODUCT_NAME = "WB-PMM";
 				SWIFT_EMIT_LOC_STRINGS = NO;

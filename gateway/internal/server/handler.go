@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/netip"
 	"os"
 	"strings"
 	"sync"
@@ -31,6 +32,7 @@ type Config struct {
 	// by the native launcher. In ordinary mode the existing shared API key
 	// behavior remains unchanged.
 	DesktopMode   bool
+	DesktopLAN    bool // Explicit opt-in; only private IPv4 inference clients are accepted.
 	ManagementKey string
 	MaxRotate     int // 单请求最多换号次数，默认 3
 	// Session 会话粘性路由器（可选；nil = 关闭粘性，纯 Pick 轮换）。
@@ -113,6 +115,7 @@ func NewHandler(cfg Config) *Handler {
 	h.mux.HandleFunc("POST /v1/messages", h.withAnthropicAuth(h.anthropicMessages))
 	h.mux.HandleFunc("GET /v1/models", h.withAuth(h.models))
 	h.mux.HandleFunc("GET /status", h.withAuth(h.status))
+	h.mux.HandleFunc("GET /v1/token-history", h.withAuth(h.tokenHistory))
 	h.mux.HandleFunc("GET /v1/stats", h.withAuth(h.stats))
 	h.mux.HandleFunc("POST /v1/stats/reset", h.withAuth(h.statsReset))
 	if cfg.DesktopMode {
@@ -134,7 +137,33 @@ func NewHandler(cfg Config) *Handler {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.cfg.DesktopMode && !h.desktopRequestAllowed(r) {
+		writeOpenAIError(w, http.StatusForbidden, "local_network_only", "this endpoint is not available from this network address")
+		return
+	}
 	h.mux.ServeHTTP(w, r)
+}
+
+func (h *Handler) desktopRequestAllowed(r *http.Request) bool {
+	// Trust the actual socket peer, never forwarding headers. Management and
+	// account/status data stay local even when the inference API is shared.
+	peer, err := netip.ParseAddrPort(r.RemoteAddr)
+	if err != nil {
+		return false
+	}
+	ip := peer.Addr().Unmap()
+	if ip.IsLoopback() {
+		return true
+	}
+	if !h.cfg.DesktopLAN || !ip.Is4() || !ip.IsPrivate() {
+		return false
+	}
+	switch r.Method + " " + r.URL.Path {
+	case "GET /v1/models", "POST /v1/chat/completions", "POST /v1/responses", "POST /v1/messages":
+		return true // Each route still enforces the inference API key.
+	default:
+		return false
+	}
 }
 
 func (h *Handler) withAuth(next http.HandlerFunc) http.HandlerFunc {

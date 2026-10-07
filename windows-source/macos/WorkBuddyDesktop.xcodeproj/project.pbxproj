@@ -1,0 +1,381 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		E2CB8C60ABBC0B1FD0DFED6C /* WorkBuddyDesktopApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 092FC8D2A0A18983C305F33D /* WorkBuddyDesktopApp.swift */; };
+		A15CBBE6544AA6D851FE21B9 /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA78328484E158CE89B2C328 /* MainWindowView.swift */; };
+		500D63949F8B1A87A12BC372 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA4C23D11219C37190B4ECA3 /* MenuBarView.swift */; };
+		1BAA6E5E988221B79C11C4CF /* AppPaths.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0D8486B324ADB6D53D19FA /* AppPaths.swift */; };
+		02AA9FB3F062AB84184008D8 /* AppLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D55ABD2432F031C1A685BDF /* AppLog.swift */; };
+		2908DE6E1412F82C5C0A0F8E /* InstanceLock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F6980EC5729B97EDAD75ABE /* InstanceLock.swift */; };
+		060DEF2C4EE5EC81097B5DFB /* ChildEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39AE3582D150B6EF8E19F4C5 /* ChildEnvironment.swift */; };
+		C291C5CB9EEE4CEF236F38A5 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4046C4D8EBD80CA1235BEB7F /* AppSettings.swift */; };
+		059F4467C8315CEBE999A5F5 /* GatewayState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1451D1F08E67B81A39E101BF /* GatewayState.swift */; };
+		61188606D4D5DE872F4BAD46 /* PanelHandshake.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B2B0D4ADCA6277BBD88989D /* PanelHandshake.swift */; };
+		CA492E202EB97FFD3E8EBFA5 /* PortInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05749E00F573E22BD4692307 /* PortInspector.swift */; };
+		A801150C6CBE6B7D270F2E45 /* ManagedProcess.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE97DC2488E9E4AE7984A474 /* ManagedProcess.swift */; };
+		54B03403BC79D35B2F24F9D3 /* GatewayConfigFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 850B76AAC645D1678B8AC15A /* GatewayConfigFile.swift */; };
+		8C1AAFE85E9EA314B15D33D8 /* ServiceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE49EDB98F29F29909EBC343 /* ServiceManager.swift */; };
+		3DF46287931D134619BDC256 /* PanelSessionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24B09095982C5EBC67FA7F4E /* PanelSessionClient.swift */; };
+		0D6080CE16A1C99A8D782913 /* PanelWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F69E4D47B9F010875D095F32 /* PanelWebView.swift */; };
+		434B839C85C23633913217C6 /* NativeBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CFB6116C3F8B54585EAC76A /* NativeBridge.swift */; };
+		9180FA1DAB874C8CAF016700 /* DesktopUtilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9180FA1DAB874C8CAF016701 /* DesktopUtilities.swift */; };
+		667DA4449BA8ADEEF70E97D1 /* WBPMM.icns in Resources */ = {isa = PBXBuildFile; fileRef = FF85F512CBE134C14329B859 /* WBPMM.icns */; };
+		82619D9AD31D2692621E4E8A /* WBPMMMenuTemplate.png in Resources */ = {isa = PBXBuildFile; fileRef = 421151BF88F5AA04EC32FCFB /* WBPMMMenuTemplate.png */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		092FC8D2A0A18983C305F33D /* WorkBuddyDesktopApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkBuddyDesktopApp.swift; sourceTree = "<group>"; };
+		CA78328484E158CE89B2C328 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowView.swift; sourceTree = "<group>"; };
+		DA4C23D11219C37190B4ECA3 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
+		1A0D8486B324ADB6D53D19FA /* AppPaths.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPaths.swift; sourceTree = "<group>"; };
+		2D55ABD2432F031C1A685BDF /* AppLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLog.swift; sourceTree = "<group>"; };
+		1F6980EC5729B97EDAD75ABE /* InstanceLock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstanceLock.swift; sourceTree = "<group>"; };
+		39AE3582D150B6EF8E19F4C5 /* ChildEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChildEnvironment.swift; sourceTree = "<group>"; };
+		4046C4D8EBD80CA1235BEB7F /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
+		1451D1F08E67B81A39E101BF /* GatewayState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GatewayState.swift; sourceTree = "<group>"; };
+		4B2B0D4ADCA6277BBD88989D /* PanelHandshake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelHandshake.swift; sourceTree = "<group>"; };
+		05749E00F573E22BD4692307 /* PortInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortInspector.swift; sourceTree = "<group>"; };
+		CE97DC2488E9E4AE7984A474 /* ManagedProcess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManagedProcess.swift; sourceTree = "<group>"; };
+		850B76AAC645D1678B8AC15A /* GatewayConfigFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GatewayConfigFile.swift; sourceTree = "<group>"; };
+		AE49EDB98F29F29909EBC343 /* ServiceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceManager.swift; sourceTree = "<group>"; };
+		24B09095982C5EBC67FA7F4E /* PanelSessionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelSessionClient.swift; sourceTree = "<group>"; };
+		F69E4D47B9F010875D095F32 /* PanelWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelWebView.swift; sourceTree = "<group>"; };
+		2CFB6116C3F8B54585EAC76A /* NativeBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeBridge.swift; sourceTree = "<group>"; };
+		B6CDB6E5D160E013280D3C68 /* WB-PMM.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "WB-PMM.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		FF85F512CBE134C14329B859 /* WBPMM.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = Assets/WBPMM.icns; sourceTree = "<group>"; };
+		421151BF88F5AA04EC32FCFB /* WBPMMMenuTemplate.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Assets/WBPMMMenuTemplate.png; sourceTree = "<group>"; };
+		68E77A9D7BC78A97D4F4E27B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		F03BA08833B8ED83FE6D9519 /* WorkBuddyDesktop.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WorkBuddyDesktop.entitlements; sourceTree = "<group>"; };
+		9180FA1DAB874C8CAF016701 /* DesktopUtilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopUtilities.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		CA8003021206097066E984FF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		1C48CE29E4E135EE62951B22 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				092FC8D2A0A18983C305F33D /* WorkBuddyDesktopApp.swift */,
+				CA78328484E158CE89B2C328 /* MainWindowView.swift */,
+				DA4C23D11219C37190B4ECA3 /* MenuBarView.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		410188F9DC6E499FEC68BCF6 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				1A0D8486B324ADB6D53D19FA /* AppPaths.swift */,
+				2D55ABD2432F031C1A685BDF /* AppLog.swift */,
+				1F6980EC5729B97EDAD75ABE /* InstanceLock.swift */,
+				39AE3582D150B6EF8E19F4C5 /* ChildEnvironment.swift */,
+				4046C4D8EBD80CA1235BEB7F /* AppSettings.swift */,
+				9180FA1DAB874C8CAF016701 /* DesktopUtilities.swift */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		6EE67047A4B2648DDBB08231 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				1451D1F08E67B81A39E101BF /* GatewayState.swift */,
+				4B2B0D4ADCA6277BBD88989D /* PanelHandshake.swift */,
+				05749E00F573E22BD4692307 /* PortInspector.swift */,
+				CE97DC2488E9E4AE7984A474 /* ManagedProcess.swift */,
+				850B76AAC645D1678B8AC15A /* GatewayConfigFile.swift */,
+				AE49EDB98F29F29909EBC343 /* ServiceManager.swift */,
+				24B09095982C5EBC67FA7F4E /* PanelSessionClient.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		22BC9E74862E65C625555B8A /* Web */ = {
+			isa = PBXGroup;
+			children = (
+				F69E4D47B9F010875D095F32 /* PanelWebView.swift */,
+			);
+			path = Web;
+			sourceTree = "<group>";
+		};
+		05E1B6709B573B6A023CF54D /* Bridge */ = {
+			isa = PBXGroup;
+			children = (
+				2CFB6116C3F8B54585EAC76A /* NativeBridge.swift */,
+			);
+			path = Bridge;
+			sourceTree = "<group>";
+		};
+		0F03BED540FCBAC621833572 /* WorkBuddyDesktop */ = {
+			isa = PBXGroup;
+			children = (
+				1C48CE29E4E135EE62951B22 /* App */,
+				410188F9DC6E499FEC68BCF6 /* Core */,
+				6EE67047A4B2648DDBB08231 /* Services */,
+				22BC9E74862E65C625555B8A /* Web */,
+				05E1B6709B573B6A023CF54D /* Bridge */,
+				FF85F512CBE134C14329B859 /* WBPMM.icns */,
+				421151BF88F5AA04EC32FCFB /* WBPMMMenuTemplate.png */,
+				68E77A9D7BC78A97D4F4E27B /* Info.plist */,
+				F03BA08833B8ED83FE6D9519 /* WorkBuddyDesktop.entitlements */,
+			);
+			path = WorkBuddyDesktop;
+			sourceTree = "<group>";
+		};
+		5151B46607EBC8890D8DFCC2 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				B6CDB6E5D160E013280D3C68 /* WB-PMM.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		DF891E785808226D241F246E = {
+			isa = PBXGroup;
+			children = (
+				0F03BED540FCBAC621833572 /* WorkBuddyDesktop */,
+				5151B46607EBC8890D8DFCC2 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		0E8A3AD980EC179856012B7E /* WorkBuddyDesktop */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E7C976ACE686BE4A338D0022 /* Build configuration list for PBXNativeTarget "WorkBuddyDesktop" */;
+			buildPhases = (
+				28BE49E1E42D704C38EEA420 /* Sources */,
+				CA8003021206097066E984FF /* Frameworks */,
+				E26E44B743A848DED8844ED9 /* Resources */,
+				DD0F4221BB533E216450F2CE /* 内置 helper */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = WorkBuddyDesktop;
+			productName = "WB-PMM";
+			productReference = B6CDB6E5D160E013280D3C68 /* WB-PMM.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		98F54143AB4E86B28C3AFEE0 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					0E8A3AD980EC179856012B7E = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = E054883DF9E787E86B97DC27 /* Build configuration list for PBXProject "WorkBuddyDesktop" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = zh-Hans;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				zh-Hans,
+				Base,
+			);
+			mainGroup = DF891E785808226D241F246E;
+			productRefGroup = 5151B46607EBC8890D8DFCC2 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				0E8A3AD980EC179856012B7E /* WorkBuddyDesktop */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		E26E44B743A848DED8844ED9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				667DA4449BA8ADEEF70E97D1 /* WBPMM.icns in Resources */,
+				82619D9AD31D2692621E4E8A /* WBPMMMenuTemplate.png in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		DD0F4221BB533E216450F2CE /* 内置 helper */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "内置 helper";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -eu\n# 把两个 Go helper 拷进 Contents/Helpers/。\n# 源目录由 WB_HELPERS_SRC 指定，默认取 scripts/build.sh 的输出目录。\nSRC=\"${WB_HELPERS_SRC:-$HOME/workbuddy2api-build/bin}\"\nDEST=\"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers\"\n\n# 打包前断言：面板必须支持 --desktop。\n# 应用是按「wbgui --desktop 可用」这个契约打包的；打进一个不认识该标志的旧二进制，\n# 结果会是应用启动后静默等 10 秒再报「面板未就绪」，原因极难看出来。\n# 这一步把该错误从运行期提前到构建期。\nif [ -x \"$SRC/wbgui\" ] && ! \"$SRC/wbgui\" --help 2>&1 | grep -q -- '-desktop'; then\n  echo \"error: $SRC/wbgui 不支持 --desktop —— 它是面板补丁之前的旧产物。\" >&2\n  echo \"note: 请重新运行 scripts/build.sh 构建面板后重试。\" >&2\n  exit 1\nfi\n\nmkdir -p \"$DEST\"\nfor name in wbgui wb2api; do\n  if [ ! -x \"$SRC/$name\" ]; then\n    echo \"error: 找不到 helper：$SRC/$name\" >&2\n    echo \"note: 请先运行 scripts/build.sh，或设置 WB_HELPERS_SRC\" >&2\n    exit 1\n  fi\n  cp -f \"$SRC/$name\" \"$DEST/$name\"\n  chmod 0755 \"$DEST/$name\"\ndone\n# 兜底清除 AppleDouble 伴生文件（打包禁止携带，见开发计划 §17.3）\nfind \"$DEST\" -name '._*' -delete 2>/dev/null || true\necho \"helpers 已就位：$DEST\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		28BE49E1E42D704C38EEA420 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E2CB8C60ABBC0B1FD0DFED6C /* WorkBuddyDesktopApp.swift in Sources */,
+				A15CBBE6544AA6D851FE21B9 /* MainWindowView.swift in Sources */,
+				500D63949F8B1A87A12BC372 /* MenuBarView.swift in Sources */,
+				1BAA6E5E988221B79C11C4CF /* AppPaths.swift in Sources */,
+				02AA9FB3F062AB84184008D8 /* AppLog.swift in Sources */,
+				2908DE6E1412F82C5C0A0F8E /* InstanceLock.swift in Sources */,
+				060DEF2C4EE5EC81097B5DFB /* ChildEnvironment.swift in Sources */,
+				C291C5CB9EEE4CEF236F38A5 /* AppSettings.swift in Sources */,
+				9180FA1DAB874C8CAF016700 /* DesktopUtilities.swift in Sources */,
+				059F4467C8315CEBE999A5F5 /* GatewayState.swift in Sources */,
+				61188606D4D5DE872F4BAD46 /* PanelHandshake.swift in Sources */,
+				CA492E202EB97FFD3E8EBFA5 /* PortInspector.swift in Sources */,
+				A801150C6CBE6B7D270F2E45 /* ManagedProcess.swift in Sources */,
+				54B03403BC79D35B2F24F9D3 /* GatewayConfigFile.swift in Sources */,
+				8C1AAFE85E9EA314B15D33D8 /* ServiceManager.swift in Sources */,
+				3DF46287931D134619BDC256 /* PanelSessionClient.swift in Sources */,
+				0D6080CE16A1C99A8D782913 /* PanelWebView.swift in Sources */,
+				434B839C85C23633913217C6 /* NativeBridge.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		882E21E0BAAE9C222F3E0941 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("DEBUG=1", "$(inherited)");
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+				WORKBUDDY_BUILD_TIME = unrecorded;
+			};
+			name = Debug;
+		};
+		236F7CEDA2999EE9EC2F49AC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				WORKBUDDY_BUILD_TIME = unrecorded;
+			};
+			name = Release;
+		};
+		4E823FE038945A181D8E370C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = WorkBuddyDesktop/WorkBuddyDesktop.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 4;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				EXECUTABLE_NAME = WorkBuddyDesktop;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = WorkBuddyDesktop/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks");
+				MARKETING_VERSION = 1.0.3;
+				PRODUCT_BUNDLE_IDENTIFIER = cn.workbuddy.desktop;
+				PRODUCT_NAME = "WB-PMM";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+			};
+			name = Debug;
+		};
+		EE71BA72BDE3D1A5BCDA304A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = WorkBuddyDesktop/WorkBuddyDesktop.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 4;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				EXECUTABLE_NAME = WorkBuddyDesktop;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = WorkBuddyDesktop/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/../Frameworks");
+				MARKETING_VERSION = 1.0.3;
+				PRODUCT_BUNDLE_IDENTIFIER = cn.workbuddy.desktop;
+				PRODUCT_NAME = "WB-PMM";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		E054883DF9E787E86B97DC27 /* Build configuration list for PBXProject "WorkBuddyDesktop" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				882E21E0BAAE9C222F3E0941 /* Debug */,
+				236F7CEDA2999EE9EC2F49AC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E7C976ACE686BE4A338D0022 /* Build configuration list for PBXNativeTarget "WorkBuddyDesktop" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4E823FE038945A181D8E370C /* Debug */,
+				EE71BA72BDE3D1A5BCDA304A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 98F54143AB4E86B28C3AFEE0 /* Project object */;
+}

@@ -224,6 +224,7 @@ struct PanelSessionClient {
     struct ConfigView {
         let revision: String
         let port: Int
+        let allowLAN: Bool
         let keyConfigured: Bool
         let proxyConfigured: Bool
         let json: [String: Any]
@@ -253,10 +254,20 @@ struct PanelSessionClient {
                   let max = pool["max_in_flight"] as? Int,
                   let enabled = sticky["enabled"] as? Bool, let ttl = sticky["ttl"] as? String,
                   let proxy = desktop["proxy_url"] as? String,
-                  summary["listen_host"] as? String == "127.0.0.1",
+                  let host = summary["listen_host"] as? String,
                   let schedulesDisabledNumber = summary["schedules_disabled"] as? NSNumber,
                   CFGetTypeID(schedulesDisabledNumber) == CFBooleanGetTypeID(),
                   let configured = value["key_configured"] as? Bool else {
+                throw ConfigFailure(code: "CONFIG_RESPONSE", uncertain: true)
+            }
+            let allowLAN: Bool
+            if let raw = editable["allow_lan"] {
+                guard let number = raw as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else {
+                    throw ConfigFailure(code: "CONFIG_RESPONSE", uncertain: true)
+                }
+                allowLAN = number.boolValue
+            } else { allowLAN = false } // Older panel responses predate this editable field.
+            guard host == (allowLAN ? "0.0.0.0" : "127.0.0.1") else {
                 throw ConfigFailure(code: "CONFIG_RESPONSE", uncertain: true)
             }
             let schedulesDisabled = schedulesDisabledNumber.boolValue
@@ -273,11 +284,13 @@ struct PanelSessionClient {
                 checkinEnabled = enabledNumber.boolValue; hours = checkinHours
             }
             guard schedulesDisabled == !checkinEnabled else { throw ConfigFailure(code: "CONFIG_RESPONSE", uncertain: true) }
-            self.revision = revision; self.port = port; keyConfigured = configured; proxyConfigured = !proxy.isEmpty
+            self.revision = revision; self.port = port; self.allowLAN = allowLAN
+            keyConfigured = configured; proxyConfigured = !proxy.isEmpty
             // Rebuild the public projection; never forward arbitrary server fields to JS.
             json = ["revision": revision, "key_configured": configured,
-                    "safe_summary": ["listen_host": "127.0.0.1", "schedules_disabled": schedulesDisabled],
-                    "editable": ["port": port, "upstream": ["timeout_seconds": timeout, "header_timeout_seconds": header, "idle_timeout_seconds": idle],
+                    "safe_summary": ["listen_host": host, "schedules_disabled": schedulesDisabled],
+                    "editable": ["port": port, "allow_lan": allowLAN,
+                                 "upstream": ["timeout_seconds": timeout, "header_timeout_seconds": header, "idle_timeout_seconds": idle],
                                  "pool": ["max_in_flight": max], "session_sticky": ["enabled": enabled, "ttl": ttl],
                                  "schedule": ["checkin_enabled": checkinEnabled, "checkin_hours": hours], "desktop": ["proxy_url": proxy]]]
         }

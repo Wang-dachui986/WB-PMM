@@ -404,6 +404,7 @@ export interface DesktopConfigView {
   revision: string
   editable: {
     port: number
+    allow_lan?: boolean
     upstream: { timeout_seconds: number; header_timeout_seconds: number; idle_timeout_seconds: number }
     pool: { max_in_flight: number }
     session_sticky: { enabled: boolean; ttl: string }

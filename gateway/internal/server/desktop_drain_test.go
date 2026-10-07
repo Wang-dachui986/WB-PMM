@@ -38,6 +38,7 @@ func newDrainTestHandler(t *testing.T) (*Handler, *atomic.Int32) {
 func drainControl(t *testing.T, h *Handler, operation string, generation uint64, wantStatus int) desktopDrainResponse {
 	t.Helper()
 	req := httptest.NewRequest("POST", "/admin/desktop/drain", strings.NewReader(fmt.Sprintf(`{"operation":%q,"generation":%d}`, operation, generation)))
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set(managementKeyHeader, "management-key")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -83,6 +84,7 @@ func assertDrainRejectsChat(t *testing.T, h *Handler) {
 	t.Helper()
 	var reads int
 	req := httptest.NewRequest("POST", "/v1/chat/completions", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Authorization", "Bearer inference-key")
 	req.Body = drainTestBody{read: func([]byte) (int, error) { reads++; return 0, io.EOF }}
 	rec := httptest.NewRecorder()
@@ -103,6 +105,7 @@ func TestDesktopDrainCountsBlockedBodyAndReleases(t *testing.T) {
 			var once sync.Once
 			body := strings.NewReader(drainChatBody)
 			req := httptest.NewRequest("POST", "/v1/chat/completions", nil).WithContext(ctx)
+			req.RemoteAddr = "127.0.0.1:12345"
 			req.Header.Set("Authorization", "Bearer inference-key")
 			req.Body = drainTestBody{read: func(p []byte) (int, error) {
 				once.Do(func() {
@@ -183,6 +186,7 @@ func TestDesktopDrainGenerationAndEmptyBegin(t *testing.T) {
 	}
 	assertDrainState(t, drainControl(t, h, "end", 11, 200), 0, true)
 	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(drainChatBody))
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Authorization", "Bearer inference-key")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -208,6 +212,7 @@ func TestDesktopDrainStrictJSON(t *testing.T) {
 	} {
 		h, _ := newDrainTestHandler(t)
 		req := httptest.NewRequest("POST", "/admin/desktop/drain", strings.NewReader(body))
+		req.RemoteAddr = "127.0.0.1:12345"
 		req.Header.Set(managementKeyHeader, "management-key")
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
@@ -223,6 +228,7 @@ func TestDesktopDrainManagementKeyAndOrdinaryMode(t *testing.T) {
 	for _, key := range []string{"", "inference-key", "wrong", "management-key"} {
 		h, _ := newDrainTestHandler(t)
 		req := httptest.NewRequest("POST", "/admin/desktop/drain", strings.NewReader(`{"operation":"begin","generation":1}`))
+		req.RemoteAddr = "127.0.0.1:12345"
 		req.Header.Set("Authorization", "Bearer inference-key")
 		req.Header.Set(managementKeyHeader, key)
 		rec := httptest.NewRecorder()
@@ -238,6 +244,7 @@ func TestDesktopDrainManagementKeyAndOrdinaryMode(t *testing.T) {
 	h, _ := newDrainTestHandler(t)
 	h.cfg.ManagementKey = ""
 	req := httptest.NewRequest("POST", "/admin/desktop/drain", strings.NewReader(`{"operation":"begin","generation":1}`))
+	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != 401 {

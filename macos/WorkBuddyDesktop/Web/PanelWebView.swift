@@ -190,6 +190,7 @@ struct PanelWebView: NSViewRepresentable {
         private let performGateway: (@MainActor (NativeBridge.Request, NativeBridge.DocumentOwner) async throws -> [String: Any])?
         private let performCheck: (@MainActor (NativeBridge.Request, NativeBridge.DocumentOwner) async throws -> [String: Any])?
         private var lifecycleObserver: NSObjectProtocol?
+        private var gatewayStatusObserver: NSObjectProtocol?
         private let onDocumentRetired: (@MainActor (NativeBridge.DocumentOwner) -> Void)?
         private var confirmation: (UUID, NativeBridge.DocumentOwner, NSAlert, CheckedContinuation<Bool, Never>, ContinuousClock.Instant)?
         private var confirmationExpiry: Task<Void, Never>?
@@ -208,6 +209,7 @@ struct PanelWebView: NSViewRepresentable {
             retireDocument()
             isActive = false
             if let lifecycleObserver { NotificationCenter.default.removeObserver(lifecycleObserver) }; lifecycleObserver = nil
+            if let gatewayStatusObserver { NotificationCenter.default.removeObserver(gatewayStatusObserver) }; gatewayStatusObserver = nil
             cookieLoadID = UUID()
             webView = nil
         }
@@ -258,6 +260,19 @@ struct PanelWebView: NSViewRepresentable {
                     guard self.isCurrentDocument(owner) else { return }
                     let value: [String: Any] = ["document_id": owner.id.uuidString, "epoch": epoch, "kind": kind]
                     let script = "if (window.__workbuddyDocumentID === '\(owner.id.uuidString)') { window.dispatchEvent(new CustomEvent('workbuddy:lifecycle', {detail: " + NativeBridge.encodeForJavaScript(value) + "})); }"
+                    self.webView?.evaluateJavaScript(script, completionHandler: nil)
+                }
+            }
+            gatewayStatusObserver = NotificationCenter.default.addObserver(forName: ServiceManager.gatewayStatusNotification, object: nil, queue: .main) { [weak self] notice in
+                let instanceID = notice.userInfo?["instance_id"] as? String
+                let epoch = notice.userInfo?["epoch"] as? String
+                MainActor.assumeIsolated {
+                    guard let self, instanceID == self.instanceID,
+                          let epoch, UInt64(epoch) != nil else { return }
+                    let owner = self.documentOwner
+                    guard self.isCurrentDocument(owner) else { return }
+                    let value: [String: Any] = ["document_id": owner.id.uuidString, "epoch": epoch]
+                    let script = "if (window.__workbuddyDocumentID === '\(owner.id.uuidString)') { window.dispatchEvent(new CustomEvent('workbuddy:gateway-status', {detail: " + NativeBridge.encodeForJavaScript(value) + "})); }"
                     self.webView?.evaluateJavaScript(script, completionHandler: nil)
                 }
             }
@@ -616,7 +631,7 @@ struct NativeFailureView: View {
                     .keyboardShortcut(.defaultAction)
                 Button("打开日志目录", action: openLogDirectory)
                     .buttonStyle(.bordered)
-                Button("退出应用", action: onQuit)
+                Button("转入后台", action: onQuit)
                     .buttonStyle(.borderless)
                     .keyboardShortcut("q")
             }

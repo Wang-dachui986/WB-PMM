@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # APP=/absolute/path/WB-PMM.app OUT=/absolute/path/release \
-#   [LEGAL_DIR=/absolute/path/legal] [VERSION=0.1.0] bash scripts/package-dmg.sh
+#   [LEGAL_DIR=/absolute/path/legal] [VERSION=1.0.3] bash scripts/package-dmg.sh
 # Packages an existing build; only the temporary copy is signed.
 set -euo pipefail
 

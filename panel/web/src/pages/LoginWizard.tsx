@@ -258,7 +258,7 @@ export default function LoginWizard({
               <li>多账号：重复本流程即可，每次会生成独立的授权链接</li>
             </ul>
           </Alert>
-          <button className="btn btn-primary" onClick={() => void start()} disabled={busy || writeDisabled}>
+          <button data-guide="login-action" className="btn btn-primary" onClick={() => void start()} disabled={busy || writeDisabled}>
             {busy && <Spinner />} 发起授权（{region === 'global' ? '国际版' : '国内版'}）
           </button>
           {busy && <button className="btn" onClick={() => void cancel()}>取消等待</button>}
@@ -277,7 +277,7 @@ export default function LoginWizard({
           </p>
           {!desktop && <div className="url-box" style={{ marginBottom: 11 }}>{sess.auth_url}</div>}
           <div className="page-actions">
-            {desktop ? <button className="btn btn-primary" onClick={() => void openBrowser()}>打开授权页面</button> : <>
+            {desktop ? <button data-guide="login-action" className="btn btn-primary" onClick={() => void openBrowser()}>打开授权页面</button> : <>
               <a className="btn btn-primary" href={sess.auth_url} target="_blank" rel="noopener noreferrer">打开授权页面</a>
               <button className="btn" onClick={() => void copyURL()}>{copied ? '✓ 已复制' : '复制链接'}</button>
             </>}
@@ -318,7 +318,7 @@ export default function LoginWizard({
             </dl>
           )}
           {!sess.saved && <div className="page-actions">
-            {sess.requires_overwrite_confirmation ? <button className="btn btn-danger" disabled={busy} onClick={() => void confirmOverwrite()}>确认覆盖同一账号</button> : <button className="btn btn-primary" disabled={busy} onClick={() => void poll(sess.id)}>重试保存</button>}
+            {sess.requires_overwrite_confirmation ? <button data-guide="login-action" className="btn btn-danger" disabled={busy} onClick={() => void confirmOverwrite()}>确认覆盖同一账号</button> : <button data-guide="login-action" className="btn btn-primary" disabled={busy} onClick={() => void poll(sess.id)}>重试保存</button>}
             <button className="btn" onClick={() => void cancel()}>取消</button>
           </div>}
           {sess.saved && <div className="page-actions" style={{ marginTop: 14 }}>
@@ -355,6 +355,7 @@ export default function LoginWizard({
           </Alert>
           <div className="page-actions" style={{ marginTop: 14 }}>
             <button
+              data-guide="login-action"
               className="btn btn-primary"
               onClick={() => {
                 setSess(null)

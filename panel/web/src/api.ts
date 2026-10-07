@@ -148,6 +148,7 @@ export const api = {
   // 模型 / 聊天
   models: () => get<ModelsResponse>('/api/models'),
   // 请求统计（按模型聚合 + 时间维度）+ 官方价换算
+  tokenHistory: (from: string, to: string) => get<import('./pages/tokenData').TokenHistory>(`/api/token-history?${new URLSearchParams({ from, to })}`),
   stats: (opt?: {
     mode?: 'peak' | 'offpeak'
     range?: string

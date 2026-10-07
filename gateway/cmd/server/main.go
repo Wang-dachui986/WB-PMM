@@ -39,6 +39,15 @@ func modelJSONPath(stateFile string) string {
 	return filepath.Join(filepath.Dir(stateFile), "model.json")
 }
 
+func desktopListenMode(listen string) (bool, error) {
+	host, port, err := net.SplitHostPort(listen)
+	n, portErr := strconv.Atoi(port)
+	if err != nil || (host != "127.0.0.1" && host != "0.0.0.0") || portErr != nil || n < 1024 || n > 65535 || strconv.Itoa(n) != port {
+		return false, errors.New("desktop mode requires 127.0.0.1 or 0.0.0.0 with a numeric port")
+	}
+	return host == "0.0.0.0", nil
+}
+
 func main() {
 	cfgPath := flag.String("config", "config.json", "path to config json")
 	desktopMode := flag.Bool("desktop", false, "require the private desktop startup handshake")
@@ -71,14 +80,14 @@ func main() {
 			log.Fatalf("load config: %v", err)
 		}
 	}
+	desktopLAN := false
 	if *desktopMode {
 		if cfg.APIKey == "" {
 			log.Fatal("desktop mode requires a configured inference API key")
 		}
-		host, port, err := net.SplitHostPort(cfg.Listen)
-		n, portErr := strconv.Atoi(port)
-		if err != nil || host != "127.0.0.1" || portErr != nil || n < 1 || n > 65535 {
-			log.Fatal("desktop mode requires a numeric 127.0.0.1 loopback listener")
+		desktopLAN, err = desktopListenMode(cfg.Listen)
+		if err != nil {
+			log.Fatal(err)
 		}
 	}
 	if ctx.Err() != nil {
@@ -103,6 +112,8 @@ func main() {
 	// redisstore：未配置/连接失败 → Noop（纯内存模式，一切功能照常）。
 	store := redisstore.New(cfg.Upstash.URL, cfg.Upstash.Token)
 
+	stopTokenHistory := server.StartTokenHistory(cfg.StateFile)
+	defer stopTokenHistory()
 	p := pool.New(cfg.StateFile)
 	defer p.Close() // 进程退出前停后台落盘 goroutine + 最后补一次落盘（FIX-4:goroutine 泄漏）
 	p.SetStore(store)
@@ -245,6 +256,7 @@ func main() {
 		Upstream:      up,
 		APIKey:        cfg.APIKey,
 		DesktopMode:   *desktopMode,
+		DesktopLAN:    desktopLAN,
 		ManagementKey: managementKey,
 		Session:       sessRouter,
 		StickyCount:   sessCount,

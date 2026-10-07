@@ -10,7 +10,7 @@ import Foundation
 /// ```
 /// ~/Library/Application Support/WorkBuddy2APIDesktop/
 ///   auths/                  网关账号凭证（workbuddy-*.json）
-///   gateway-config.json     网关配置（listen 固定为回环）
+///   gateway-config.json     网关配置（listen 默认回环，可经配置事务开启 LAN）
 ///   backups/                配置备份
 ///   run/                    运行期文件（锁、子进程日志）
 /// ~/Library/Logs/WorkBuddy2APIDesktop/

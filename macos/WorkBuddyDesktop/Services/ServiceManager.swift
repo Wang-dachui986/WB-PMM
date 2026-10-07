@@ -20,12 +20,18 @@ final class ServiceManager: ObservableObject {
 
     // MARK: - 对外状态
 
-    @Published private(set) var gatewayState: GatewayState = .stopped
+    @Published private(set) var gatewayState: GatewayState = .stopped {
+        didSet { if gatewayState != oldValue { publishGatewayStatus() } }
+    }
     @Published private(set) var panelState: PanelState = .notStarted
-    @Published private(set) var lastError: String?
+    @Published private(set) var lastError: String? {
+        didSet { if lastError != oldValue { publishGatewayStatus() } }
+    }
     @Published private(set) var panelPort: Int?
     /// 网关 /healthz 的最近一次结果，用于展示「账号可用数」。
-    @Published private(set) var gatewayHealth: GatewayHealth?
+    @Published private(set) var gatewayHealth: GatewayHealth? {
+        didSet { if gatewayHealth != oldValue { publishGatewayStatus() } }
+    }
     /// 最近一次状态更新时间（用于「尚未刷新」标记）。
     @Published private(set) var stateUpdatedAt: Date = Date()
 
@@ -53,8 +59,24 @@ final class ServiceManager: ObservableObject {
     private var gatewayProcess: ManagedProcess?
     private var gatewayStartedAt: (ManagedProcess, ContinuousClock.Instant)?
     static let lifecycleNotification = Notification.Name("WorkBuddyDesktopLifecycle")
+    static let gatewayStatusNotification = Notification.Name("WorkBuddyDesktopGatewayStatus")
     private var lifecycleEpoch: UInt64 = 0
+    private var gatewayStatusEpoch: UInt64 = 0
+    private var gatewayStatusPublishPending = false
     private var sleeping = false
+
+    private func publishGatewayStatus() {
+        guard !gatewayStatusPublishPending else { return }
+        gatewayStatusPublishPending = true
+        Task { @MainActor [weak self] in
+            await Task.yield() // Coalesce state, health and error assignments from one transition.
+            guard let self else { return }
+            self.gatewayStatusPublishPending = false
+            self.gatewayStatusEpoch &+= 1
+            NotificationCenter.default.post(name: Self.gatewayStatusNotification, object: nil,
+                userInfo: ["instance_id": self.instanceID, "epoch": String(self.gatewayStatusEpoch)])
+        }
+    }
     @MainActor private final class ProxyAttempt {
         let id: String; let owner: NativeBridge.DocumentOwner; let revision: String; let instance: String
         let connection: NWConnection
@@ -105,6 +127,7 @@ final class ServiceManager: ObservableObject {
         guard let self else { return .init(gateway: .stopped, panel: .notStarted, apiPort: nil) }
         return .init(gateway: self.gatewayState, panel: self.panelState, apiPort: self.apiPort,
                      healthyAccounts: self.gatewayHealth?.healthy, totalAccounts: self.gatewayHealth?.total,
+                     listenHost: self.committedSnapshot?.host,
                      apiKeyConfigured: self.committedSnapshot.map { !$0.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
     }, openDirectory: { [weak self] url in self?.utilityDirectoryOpener?(url) ?? NSWorkspace.shared.open(url) })
     var operationConfirmation: ((String, Bool) async -> MaintenanceStopMode?)?
@@ -518,7 +541,7 @@ final class ServiceManager: ObservableObject {
         let port = snapshot.port
 
         // 端口冲突：明确告知，不杀陌生进程，不静默换端口
-        let portCheck = PortInspector.probe(port: port)
+        let portCheck = PortInspector.probe(port: port, host: snapshot.host)
         if portCheck == .unavailable {
             gatewayState = .failed(reason: "无法检查 API 端口，请在本机准备检查中重试")
             lastError = gatewayState.detail; stateUpdatedAt = Date(); return false
@@ -771,7 +794,7 @@ final class ServiceManager: ObservableObject {
                 }
                 let own = gatewayProcess?.isRunning == true && gatewayPort == snapshot.port
                 result["revision"] = snapshot.revision; result["port"] = snapshot.port
-                result["port_result"] = own ? "owned" : PortInspector.probe(port: snapshot.port).rawValue
+                result["port_result"] = own ? "owned" : PortInspector.probe(port: snapshot.port, host: snapshot.host).rawValue
                 result["config_result"] = snapshot.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "key_missing" : "ok"
                 result["ready"] = items.allSatisfy { $0["result"] == "ok" } &&
                     (result["port_result"] as? String == "free" || own) && result["config_result"] as? String == "ok"
@@ -1070,7 +1093,7 @@ final class ServiceManager: ObservableObject {
                 try checkServiceFlow(flow)
                 let snapshot = try GatewayConfigFile.readSnapshot()
                 guard view.revision == prepared.candidateRevision, snapshot.revision == view.revision,
-                      snapshot.port == view.port else { throw NativeBridge.OperationFailure(code: "CONFIG_CONFLICT") }
+                      snapshot.port == view.port, snapshot.allowLAN == view.allowLAN else { throw NativeBridge.OperationFailure(code: "CONFIG_CONFLICT") }
                 committedSnapshot = snapshot
                 if !flow.wasRunning { gatewayState = .stopped }
                 if flow.wasRunning {
@@ -1173,6 +1196,7 @@ final class ServiceManager: ObservableObject {
         guard serviceFlow === flow else { return }
         flow.settled = true; flow.expiry?.cancel(); closeServiceAlert(flow)
         serviceFlow = nil; endOperation(); stateUpdatedAt = Date()
+        publishGatewayStatus()
     }
 
     // MARK: - 账号维护
@@ -1726,6 +1750,11 @@ final class ServiceManager: ObservableObject {
         ]
         if let port = apiPort { dict["api_port"] = port }
         if let base = apiBaseURL { dict["api_base_url"] = base }
+        let lanEnabled = committedSnapshot?.allowLAN ?? false
+        dict["lan_enabled"] = lanEnabled
+        if lanEnabled, gatewayProcess?.isRunning == true, let port = gatewayPort {
+            dict["lan_api_base_urls"] = PortInspector.lanIPv4Addresses().map { "http://\($0):\(port)/v1" }
+        } else { dict["lan_api_base_urls"] = [String]() }
         if let (process, start) = gatewayStartedAt, gatewayProcess === process, process.isRunning {
             dict["uptime_seconds"] = max(0, start.duration(to: .now).components.seconds)
         }

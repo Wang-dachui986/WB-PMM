@@ -14,6 +14,7 @@ import ServiceManagement
         let apiPort: Int?
         var healthyAccounts: Int? = nil
         var totalAccounts: Int? = nil
+        var listenHost: String? = nil
         var proxyConfigured: Bool? = nil
         var apiKeyConfigured: Bool? = nil
     }
@@ -292,8 +293,8 @@ import ServiceManagement
         if let port = state.panel.port, (1024...65535).contains(port) { status["panel_port"] = port }
         if let count = state.totalAccounts, (0...1_000_000).contains(count) { status["total_accounts"] = count }
         if let count = state.healthyAccounts, (0...1_000_000).contains(count) { status["healthy_accounts"] = count }
-        var config: [String: Any] = ["listen_host": "127.0.0.1", "theme": settings.theme,
-                                    "auto_start_gateway": settings.autoStartGateway]
+        var config: [String: Any] = ["theme": settings.theme, "auto_start_gateway": settings.autoStartGateway]
+        if let host = state.listenHost { config["listen_host"] = host }
         if let value = state.proxyConfigured { config["proxy_configured"] = value }
         if let value = state.apiKeyConfigured { config["api_key_configured"] = value }
         var logs: [String: Any] = [:]

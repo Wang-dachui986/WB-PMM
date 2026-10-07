@@ -14,6 +14,8 @@ enum GatewayConfigFile {
         let revision: String
         var proxyURL: String = ""
         var port: Int { GatewayConfigFile.parsePort(listen)! }
+        var allowLAN: Bool { listen.hasPrefix("0.0.0.0:") }
+        var host: String { allowLAN ? "0.0.0.0" : "127.0.0.1" }
     }
 
     enum Failure: LocalizedError {
@@ -104,10 +106,12 @@ enum GatewayConfigFile {
     }
 
     static func parsePort(_ listen: String) -> Int? {
-        let prefix = "127.0.0.1:"
-        guard listen.hasPrefix(prefix), let port = Int(listen.dropFirst(prefix.count)),
-              (1024...65535).contains(port), listen == "\(prefix)\(port)" else { return nil }
-        return port
+        for host in ["127.0.0.1", "0.0.0.0"] {
+            let prefix = host + ":"
+            if listen.hasPrefix(prefix), let port = Int(listen.dropFirst(prefix.count)),
+               (1024...65535).contains(port), listen == "\(prefix)\(port)" { return port }
+        }
+        return nil
     }
 
     /// Open every ancestor without following links. Only the application root

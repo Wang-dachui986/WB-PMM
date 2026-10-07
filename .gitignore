@@ -37,3 +37,12 @@ bin/
 ._*
 .idea/
 .vscode/
+
+**/obj/
+**/bin/
+*.pkg
+*.exe
+*.dll
+*.pdb
+**/state.json
+**/token-history.json

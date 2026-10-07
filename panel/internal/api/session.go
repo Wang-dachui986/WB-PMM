@@ -365,6 +365,7 @@ func desktopPolicy(r *http.Request) (status int, code, message string, blocked b
 		path == "/api/accounts" && r.Method == http.MethodGet,
 		path == "/api/models" && r.Method == http.MethodGet,
 		path == "/api/stats" && r.Method == http.MethodGet,
+		path == "/api/token-history" && r.Method == http.MethodGet,
 		path == "/api/tasks" && r.Method == http.MethodGet,
 		path == "/api/chat" && r.Method == http.MethodPost,
 		path == "/api/chat/stream" && r.Method == http.MethodPost,

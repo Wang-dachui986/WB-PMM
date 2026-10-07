@@ -1,42 +1,49 @@
 # WB-PMM
 
-WB-PMM 是运行在 Mac 本机的 WorkBuddy 账号与 API 网关控制台。它把 Go 网关和管理面板放进一个 macOS App，通过 SwiftUI 窗口和内置网页面板管理账号、模型接入、服务状态与日志。应用界面为简体中文，安装包运行时无需另装 Go、Node.js、Docker 或 Redis。
+本地 AI 网关控制台，支持 macOS 与 Windows 10/11 x64。包含账号管理、模型接入、局域网调用、后台托盘/菜单栏运行及 Token 用量统计。
 
-本项目是社区开源软件，**不是腾讯 CodeBuddy 或 WorkBuddy Global 的官方产品**。使用者需要自行持有并有权使用对应区域的账号；账号授权、模型可用性、积分和服务条款由上游决定。开源软件本身不附带免费模型额度。
+## 安装包
 
-## 下载与安装
+[下载本次版本：macOS 1.0.5 / Windows 1.0.10](https://github.com/Wang-dachui986/WB-PMM/releases/tag/desktop-2026-10-08)
 
-- 系统要求：macOS 14 或更新版本、Apple Silicon（M 系列）Mac。当前安装包内的 Go 组件仅为 arm64，Intel Mac 不在支持范围内。
-- 从 [最新版本](https://github.com/Wang-dachui986/WB-PMM/releases/latest) 下载 `WB-PMM-0.1.0-macos-arm64.dmg`，将 `WB-PMM.app` 拖入“应用程序”后从那里打开。
-- 0.1.0 使用临时签名，尚无 Apple Developer ID 签名或公证。若 macOS 阻止首次打开，请先确认下载来源与发布文件，再按 [Apple 的“隐私与安全性”操作说明](https://support.apple.com/zh-cn/102445) 对这个 App 手动选择“仍要打开”。
+- **macOS**：`WB-PMM-1.0.5-macos-arm64.pkg`，Apple Silicon、macOS 14 及以上，安装至 `/Applications/WB-PMM.app`。
+- **Windows**：`WB-PMM-Setup-1.0.10-x64-compile-check.exe`，Windows 10/11 Intel/AMD x64，可选择安装位置，生成开始菜单和桌面快捷方式。
+- 覆盖升级前正常退出应用；账号和配置独立保存。不要手工覆盖正在运行的程序。
+- 同一 Release 提供 SHA-256 校验文件。安装包按本地原件上传，没有重新压缩或修改签名。
 
-完整步骤见 [使用指南](docs/USER_GUIDE.md)。
+**验证范围**：本地自动测试、前端构建、两端编译、NSIS 编译及 Mac 包内容/临时签名检查通过；Mac 内置网关通过隔离运行检查。Windows 安装、系统权限和托盘行为仍待实机验收，因此文件名保留 `compile-check`。Mac PKG 未签署 Developer ID Installer、未公证；Windows 安装包未作发布者签名。
 
-## 能做什么
+## 私有仓库下载权限
 
-- 通过浏览器完成国内版或国际版账号的 OAuth 设备授权，在本机保存账号凭证；查看账号状态、积分，并按需重新授权。
-- 在“网关配置”中设置本机端口、超时、代理、并发和会话保持；在“API 与模型”中复制地址与本机 API Key，查看当前返回的模型 ID、上下文长度、最大输出和推理强度元数据；在“请求统计”查看本次网关运行的数据。
-- 提供 OpenAI Chat Completions、OpenAI Responses 和 Anthropic Messages 的**常用兼容子集**。支持文本、流式输出和函数工具往返；图片能力取决于实际模型。客户端须携带完整对话历史，不提供 Responses 的服务端会话存储、后台任务或平台内置工具。不能保证任意 Agent 的专有扩展可用。
-- 在“聊天测试”手动选择模型及推理强度，设置可选的 `temperature`、最大输出 Token 和流式输出；发出测试请求会实际调用上游，可能消耗额度。
-- 在“网关配置 → 自动签到领积分”设置签到开关与本机时区的整点时间。仅在 API 服务运行期间对有有效凭证、未禁用的国内账号执行；国际账号跳过，奖励以实际上游结果为准。
-- 关闭窗口后保留菜单栏运行；菜单栏可重新打开窗口、启停 API 或完全退出。在“应用设置”中可分别开启“手动打开应用时启动 API”和“登录 macOS 时自动打开应用并启动 API”。
+仓库保持 Private。源码与 Release 安装包都需要登录 GitHub，并拥有此仓库的读取权限。
 
-## 本机接入
+**转发链接不会自动授予下载权限。** 如需让指定人员下载，可邀请对方为私有仓库协作者，再发送 Release 链接；协作者也能读取源码。GitHub 私有 Release 不提供“只凭链接下载、无需账号、只能访问安装包”的共享模式。若需要该模式，应另行使用支持限时下载链接的文件存储，源码仓库继续保持私有。
 
-默认端口为 `7863`。更改端口后请在“API 与模型”复制当前地址；以下为默认值：
+## 快速使用
 
-| 协议 | 完整请求地址 | 自动拼接路径的 SDK Base URL |
-| --- | --- | --- |
-| OpenAI Chat Completions | `http://127.0.0.1:7863/v1/chat/completions` | `http://127.0.0.1:7863/v1` |
-| OpenAI Responses | `http://127.0.0.1:7863/v1/responses` | `http://127.0.0.1:7863/v1` |
-| Anthropic Messages | `http://127.0.0.1:7863/v1/messages` | `http://127.0.0.1:7863` |
+1. 安装并打开应用，在「添加账号」完成授权。
+2. 点击「启动」，确认网关可调用。
+3. 在「API 与模型」复制地址和 API Key，填入调用端。
+4. 本机默认 Base URL：`http://127.0.0.1:7863/v1`。
+5. 完整接口：`/v1/chat/completions`、`/v1/responses`、`/v1/messages`。按调用端要求选择 Base URL 或完整端点。
+6. 「Token 统计」支持日、周、月、年度，按模型统计输入/输出；可切换热力图、扇形图、柱状图、曲线图。
 
-三种协议共用应用生成的本机 API Key。OpenAI 接口使用 `Authorization: Bearer <Key>`；Messages 接口可使用 `x-api-key: <Key>` 或同一 Bearer Key。模型 ID 请从“API 与模型”复制完整值，包括可能的 `global:` 前缀。详细填写方式和常见错误见 [使用指南](docs/USER_GUIDE.md)。
+Token 历史仅从新版本启动后开始保存，无法补回之前未记录的数据；只累计上游实际返回的 usage。详见 [Token 统计说明](docs/TOKEN-STATISTICS.md)。
 
-## 数据与更新
+## 源码结构与构建
 
-账号凭证和配置在 `~/Library/Application Support/WorkBuddy2APIDesktop/`，日志在 `~/Library/Logs/WorkBuddy2APIDesktop/`。更新时完全退出应用，再用新版本替换“应用程序”中的 App；替换 App 不会删除上述数据。卸载和备份步骤见 [使用指南](docs/USER_GUIDE.md)。
+本次保留两端已验证的独立源码快照，避免合并平台差异时丢失 Windows 权限和进程管理修复：
 
-## 源码与许可
+| 目录 | 用途 |
+| --- | --- |
+| 根目录 `macos/`、`gateway/`、`panel/`、`scripts/` | macOS 1.0.5 构建源 |
+| `windows-source/` | Windows 1.0.10 的完整构建源；从此目录执行 Windows 构建 |
+| `docs/` | 使用、构建及 Token 统计说明 |
 
-源码构建见 [构建指南](docs/BUILD.md)。项目保留所复用的 [workbuddy2api](https://github.com/Sliverkiss/workbuddy2api) 和 [workbuddy2api-gui](https://github.com/linbeize/workbuddy2api-gui) 的 MIT 许可原文；详情见 [第三方声明](THIRD_PARTY_NOTICES.md) 与各组件的 `LICENSE`。本项目许可见 [LICENSE](LICENSE)。
+- [Mac 构建说明](docs/BUILD.md) / [Mac 项目说明](README-macOS.md)
+- [Windows 构建与安装说明](windows-source/windows/README.md)
+- [完整使用说明](docs/USER_GUIDE.md)
+
+构建前安装对应 Go、Node.js/npm、Xcode 或 .NET/NSIS 工具链，并安装前端依赖。Windows 源码快照中保留的 macOS 文件不代表最新 Mac 版本；Mac 请使用仓库根目录。
+
+仓库不包含真实账号凭证、运行配置、日志、依赖缓存和编译临时文件。许可证与上游声明保留在 `LICENSE`、`THIRD_PARTY_NOTICES.md`、`UPSTREAM.md` 和 `licenses/`。

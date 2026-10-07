@@ -94,6 +94,7 @@ func TestAdminRequiresSameAPIKey(t *testing.T) {
 	// 错 key → 401
 	rec = httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/admin/accounts/u1/disable", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
 	req.Header.Set("Authorization", "Bearer wrong")
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
@@ -122,6 +123,7 @@ func TestDesktopManagementKeyIsIndependentFromInferenceKey(t *testing.T) {
 	// The persistent inference key cannot mutate admin state or reset stats.
 	for _, path := range []string{"/admin/accounts/u1/disable", "/v1/stats/reset"} {
 		req := httptest.NewRequest(http.MethodPost, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
 		req.Header.Set("Authorization", "Bearer inference-key")
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
@@ -133,6 +135,7 @@ func TestDesktopManagementKeyIsIndependentFromInferenceKey(t *testing.T) {
 	// The management key cannot read or invoke inference endpoints.
 	for _, path := range []string{"/status", "/v1/stats"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
 		req.Header.Set(managementKeyHeader, "management-key")
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
@@ -144,6 +147,7 @@ func TestDesktopManagementKeyIsIndependentFromInferenceKey(t *testing.T) {
 	// The private key is accepted only by the intended write operations.
 	for _, path := range []string{"/admin/accounts/u1/disable", "/v1/stats/reset"} {
 		req := httptest.NewRequest(http.MethodPost, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
 		req.Header.Set(managementKeyHeader, "management-key")
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
@@ -171,6 +175,7 @@ func TestDesktopInferenceRoutesFailClosedWithoutInferenceKey(t *testing.T) {
 	} {
 		t.Run(header.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/status", nil)
+			req.RemoteAddr = "127.0.0.1:12345"
 			if header.value != "" {
 				req.Header.Set(managementKeyHeader, header.value)
 			}

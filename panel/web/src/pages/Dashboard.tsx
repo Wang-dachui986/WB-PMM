@@ -1,9 +1,9 @@
 // Dashboard.tsx 仪表盘：账号池健康度、积分总览、异常提示。
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { api, ApiError } from '../api'
-import { desktopCommand, hasDesktopBridge } from '../desktopBridge'
-import type { Account, Overview, StatsResponse } from '../types'
+import { beginMaintenance, desktopCommand, hasDesktopBridge, subscribeDesktopGatewayStatus, type MaintenanceFlow } from '../desktopBridge'
+import type { Account, Overview, StatsResponse, TaskView } from '../types'
 import { Alert, Badge, observedCredits, displayName, fmtDuration, fmtISO, fmtNum, gatewayStatusBadge, Spinner, statusBadge } from '../ui'
 
 // Keep both reads in one flight, including while a previous page is leaving.
@@ -18,27 +18,30 @@ export function pollDashboard(onPage: (overview: Overview, accounts: Account[]) 
   onDesktop?: (status: Record<string, unknown>, stats: StatsResponse | null) => void) {
   let active = true
   let busy = false
+  let paused = false
   let pendingVisibleRefresh = false
+  let pendingGatewayRefresh = false
   let timer: ReturnType<typeof setTimeout> | undefined
   const clearTimer = () => { if (timer !== undefined) clearTimeout(timer); timer = undefined }
   const load = async (silent = false) => {
-    if (!active || document.hidden || busy) return
+    if (!active || paused || document.hidden || busy) return
     busy = true
     clearTimer()
     if (!silent) onLoading(true)
     try {
       while (pendingDashboard) {
         await pendingDashboard
-        if (!active || document.hidden) return
+        if (!active || paused || document.hidden) return
       }
       // A fast failure must not release the flight while the other read is pending.
       pendingVisibleRefresh = false
+      pendingGatewayRefresh = false
       const request = Promise.allSettled([api.overview(), api.accounts(),
         onDesktop ? Promise.allSettled([desktopCommand('desktop.getStatus'), api.stats()]) : Promise.resolve(null)])
       pendingDashboard = request
       const [overview, accounts, desktop] = await request
       if (pendingDashboard === request) pendingDashboard = undefined
-      if (!active || document.hidden) return
+      if (!active || paused || document.hidden) return
       if (onDesktop && desktop.status === 'fulfilled' && desktop.value) {
         const [status, stats] = desktop.value
         onDesktop(status.status === 'fulfilled' ? (status.value.status ?? {}) as Record<string, unknown> : {}, stats.status === 'fulfilled' ? stats.value : null)
@@ -47,12 +50,12 @@ export function pollDashboard(onPage: (overview: Overview, accounts: Account[]) 
       if (accounts.status === 'rejected') throw accounts.reason
       onPage(overview.value, accounts.value.accounts ?? [])
     } catch (err) {
-      if (active && !document.hidden) onError(err instanceof ApiError ? err.message : '加载失败')
+      if (active && !paused && !document.hidden) onError(err instanceof ApiError ? err.message : '加载失败')
     } finally {
       busy = false
       if (active) onLoading(false)
-      if (active && !document.hidden) {
-        if (pendingVisibleRefresh) void load(true)
+      if (active && !paused && !document.hidden) {
+        if (pendingVisibleRefresh || pendingGatewayRefresh) void load(true)
         else timer = setTimeout(() => void load(true), 15_000)
       }
     }
@@ -60,53 +63,265 @@ export function pollDashboard(onPage: (overview: Overview, accounts: Account[]) 
   const visibility = () => {
     clearTimer()
     if (document.hidden) pendingVisibleRefresh = false
+    else if (paused) return
     else if (busy) pendingVisibleRefresh = true
     else void load(true)
   }
+  const gatewayStatus = () => {
+    if (!active) return
+    pendingGatewayRefresh = true
+    if (!paused && !document.hidden && !busy) void load(true)
+  }
   document.addEventListener('visibilitychange', visibility)
+  const unsubscribeGateway = typeof window !== 'undefined' && hasDesktopBridge() ? subscribeDesktopGatewayStatus(gatewayStatus) : () => {}
   void load()
   return {
     refresh: () => load(),
-    stop: () => { active = false; pendingVisibleRefresh = false; clearTimer(); document.removeEventListener('visibilitychange', visibility) },
+    pause: () => { paused = true; pendingVisibleRefresh = false; clearTimer() },
+    resume: () => {
+      if (!active) return
+      paused = false
+      if (document.hidden) return
+      if (busy) pendingVisibleRefresh = true
+      else void load()
+    },
+    stop: () => { active = false; pendingVisibleRefresh = false; pendingGatewayRefresh = false; clearTimer(); document.removeEventListener('visibilitychange', visibility); unsubscribeGateway() },
   }
 }
 
-export default function Dashboard() {
+type CreditProgress = { done: number; total: number; batch: number; batches: number }
+type CreditResult = { okUIDs: Set<string>; failed: number; confirmed: number; issue?: string; batches: number }
+type CreditRun = { cancelled: boolean; finished: boolean; flow: MaintenanceFlow | null; cleanupError?: string; cancelWait?: Promise<void>; signalCancel?: () => void }
+type CreditOutcome = CreditResult & { total: number; target: number; skipped: number }
+
+async function awaitCreditRequest<T>(request: Promise<T>, run: CreditRun, timeoutMs: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      request,
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(message)), timeoutMs) }),
+      ...(run.cancelWait ? [run.cancelWait.then(() => { throw new Error('积分查询已取消') })] : []),
+    ])
+  } finally { if (timer !== undefined) clearTimeout(timer) }
+}
+
+export async function queryAllCredits(
+  uids: string[], desktop: boolean, run: CreditRun, progress: (value: CreditProgress) => void,
+  operations: {
+    batch: typeof api.batchCredits
+    task: typeof api.task
+    begin: typeof beginMaintenance
+    wait: () => Promise<void>
+  } = { batch: api.batchCredits, task: api.task, begin: beginMaintenance, wait: () => new Promise(resolve => setTimeout(resolve, 1000)) },
+): Promise<CreditResult> {
+  const batches = desktop ? Array.from({ length: Math.ceil(uids.length / 20) }, (_, i) => uids.slice(i * 20, i * 20 + 20)) : [uids]
+  const okUIDs = new Set<string>()
+  let failed = 0
+  let confirmed = 0
+  let issue: string | undefined
+  for (let index = 0; index < batches.length && !run.cancelled; index++) {
+    const batch = batches[index]
+    let flow: MaintenanceFlow | null = null
+    let settled = false
+    progress({ done: confirmed, total: uids.length, batch: index + 1, batches: batches.length })
+    try {
+      if (desktop) {
+        flow = operations.begin('credits', batch)
+        run.flow = flow
+      }
+      const lease = await flow?.ready
+      if (run.cancelled) break
+      const submitted = await awaitCreditRequest(operations.batch(batch, lease), run, 30_000, '积分任务提交超时，正在取消当前维护')
+      let task: TaskView = submitted
+      const deadline = Date.now() + 13 * 60_000
+      while (task.running && !run.cancelled) {
+        if (Date.now() >= deadline) throw new Error('积分查询超时，正在取消当前维护')
+        await operations.wait()
+        if (!run.cancelled) {
+          const remaining = deadline - Date.now()
+          if (remaining <= 0) throw new Error('积分查询超时，正在取消当前维护')
+          task = await awaitCreditRequest(operations.task(submitted.id), run, Math.min(remaining, 30_000), '积分任务状态读取超时，正在取消当前维护')
+        }
+        if (!run.cancelled) progress({ done: confirmed + task.done, total: uids.length, batch: index + 1, batches: batches.length })
+      }
+      if (run.cancelled) break
+      settled = !task.running
+      const items = task.items ?? []
+      for (const item of items) {
+        if (item.ok) okUIDs.add(item.uid)
+        else failed++
+      }
+      confirmed += items.length
+      progress({ done: confirmed, total: uids.length, batch: index + 1, batches: batches.length })
+      if (task.error || !settled || task.done !== batch.length || items.length !== batch.length) {
+        throw new Error(task.error || `第 ${index + 1} 批未完整返回结果`)
+      }
+    } catch (error) {
+      if (!run.cancelled) issue = error instanceof Error ? error.message : '查询失败'
+    } finally {
+      if (flow) {
+        try {
+          if (run.cancelled || !settled) await flow.cancel()
+          else await flow.end()
+          if (run.flow === flow) run.flow = null
+        } catch (error) {
+          run.cleanupError = error instanceof Error ? error.message : '结束账号维护失败'
+          issue = `账号维护结束未确认：${run.cleanupError}`
+        }
+      }
+    }
+    if (issue) break
+  }
+  return { okUIDs, failed, confirmed, issue, batches: batches.length }
+}
+
+export default function Dashboard({ onStartGuide, guideOpen = false }: { onStartGuide?: () => void; guideOpen?: boolean }) {
   const [ov, setOv] = useState<Overview | null>(null)
   const [accounts, setAccounts] = useState<Account[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshedAt, setRefreshedAt] = useState<Date | null>(null)
   const refresh = useRef<() => void>(() => {})
+  const pollingRef = useRef<ReturnType<typeof pollDashboard> | null>(null)
+  const creditRun = useRef<CreditRun | null>(null)
+  const pendingCreditOutcome = useRef<CreditOutcome | null>(null)
+  const mounted = useRef(true)
+  const [creditBusy, setCreditBusy] = useState(false)
+  const [creditProgress, setCreditProgress] = useState<CreditProgress | null>(null)
+  const [creditOutcome, setCreditOutcome] = useState<CreditOutcome | null>(null)
+  const [creditNotice, setCreditNotice] = useState<{ kind: 'ok' | 'warn' | 'error'; text: string } | null>(null)
   const desktop = hasDesktopBridge()
   const [nativeStatus, setNativeStatus] = useState<Record<string, unknown>>({})
   const [stats, setStats] = useState<StatsResponse | null>(null)
   const [copyNotice, setCopyNotice] = useState<string | null>(null)
-  const copy = async (key = false) => {
+  const copy = async (key = false, address?: string) => {
     try {
       if (key) await desktopCommand('api.copyKey')
-      else if (typeof nativeStatus.api_base_url === 'string') await navigator.clipboard.writeText(nativeStatus.api_base_url)
+      else if (typeof (address ?? nativeStatus.api_base_url) === 'string') await navigator.clipboard.writeText((address ?? nativeStatus.api_base_url) as string)
       else throw new Error()
-      setCopyNotice(key ? 'API Key 已由原生应用复制' : 'API 地址已复制')
+      setCopyNotice(key ? 'API Key 已由原生应用复制' : address ? '局域网地址已复制' : 'API 地址已复制')
     } catch { setCopyNotice('复制未完成，请检查本机状态') }
   }
 
   useEffect(() => {
+    mounted.current = true
     const polling = pollDashboard((o, a) => {
       setOv(o)
       setAccounts(a)
       setError(null)
       setRefreshedAt(new Date())
+      if (pendingCreditOutcome.current) {
+        setCreditOutcome(pendingCreditOutcome.current)
+        pendingCreditOutcome.current = null
+        setCreditNotice(current => current ? { ...current, text: current.text.replace('正在刷新仪表盘', '仪表盘已刷新') } : current)
+      }
     }, setError, setLoading, desktop ? (status, statistics) => { setNativeStatus(status); setStats(statistics) } : undefined)
+    pollingRef.current = polling
     refresh.current = () => { void polling.refresh() }
-    return () => { refresh.current = () => {}; polling.stop() }
+    return () => {
+      mounted.current = false
+      const run = creditRun.current
+      if (run) { run.cancelled = true; run.signalCancel?.(); void run.flow?.cancel().catch(() => undefined) }
+      refresh.current = () => {}
+      pollingRef.current = null
+      polling.stop()
+    }
   }, [])
+
+  const finishCreditRun = (run: CreditRun) => {
+    if (creditRun.current !== run || !run.finished || run.flow) return
+    creditRun.current = null
+    if (mounted.current) {
+      setCreditBusy(false)
+      pollingRef.current?.resume()
+    }
+  }
+
+  const queryCredits = async () => {
+    if (creditRun.current) {
+      const run = creditRun.current
+      run.cancelled = true
+      run.signalCancel?.()
+      setCreditNotice({ kind: 'warn', text: '正在取消积分查询…' })
+      const flow = run.flow
+      if (flow) {
+        try {
+          await flow.cancel()
+          if (run.flow === flow) run.flow = null
+          run.cleanupError = undefined
+          if (run.finished) setCreditNotice({ kind: 'warn', text: '积分查询已取消；仪表盘将刷新已完成的账号结果' })
+          finishCreditRun(run)
+        } catch (error) {
+          if (run.flow === flow && mounted.current) {
+            run.cleanupError = error instanceof Error ? error.message : '原生维护取消失败'
+            setCreditNotice({ kind: 'error', text: `账号维护结束未确认：${run.cleanupError}。请重试结束维护` })
+          }
+        }
+      }
+      return
+    }
+    let signalCancel = () => {}
+    const cancelWait = new Promise<void>(resolve => { signalCancel = resolve })
+    const run: CreditRun = { cancelled: false, finished: false, flow: null, cancelWait, signalCancel }
+    creditRun.current = run
+    pollingRef.current?.pause()
+    setCreditBusy(true)
+    setCreditProgress(null)
+    setCreditOutcome(null)
+    pendingCreditOutcome.current = null
+    setCreditNotice(null)
+    try {
+      const snapshot = await awaitCreditRequest(api.accounts(), run, 30_000, '账号列表读取超时')
+      if (run.cancelled) return
+      const all = snapshot.accounts ?? []
+      const uids = [...new Set(all.filter(a => a.has_file).map(a => a.uid))]
+      const skipped = all.filter(a => !a.has_file).length
+      if (uids.length === 0) {
+        setCreditNotice({ kind: 'warn', text: all.length ? `没有可查询的凭证账号；${skipped} 个账号缺少本地凭证` : '尚未添加账号' })
+        return
+      }
+      const result = await queryAllCredits(uids, desktop, run, value => { if (mounted.current && !run.cancelled) setCreditProgress(value) })
+      if (!mounted.current) return
+      if (run.cancelled) {
+        setCreditNotice({ kind: 'warn', text: '积分查询已取消；已完成的账号结果会随仪表盘刷新' })
+        return
+      }
+      pendingCreditOutcome.current = { ...result, total: all.length, target: uids.length, skipped }
+      const unconfirmed = uids.length - result.confirmed
+      const detail = `已完成 ${result.confirmed}/${uids.length}，成功 ${result.okUIDs.size}，失败 ${result.failed}${unconfirmed ? `，未确认 ${unconfirmed}` : ''}${skipped ? `，无凭证 ${skipped}` : ''}（${result.batches} 批）`
+      setCreditNotice({ kind: result.issue ? 'error' : result.failed || unconfirmed || skipped ? 'warn' : 'ok', text: `积分查询${result.issue ? `中断：${result.issue}；` : '完成：'}${detail}。正在刷新仪表盘` })
+    } catch (error) {
+      if (mounted.current && !run.cancelled) setCreditNotice({ kind: 'error', text: error instanceof Error ? error.message : '查询积分失败' })
+    } finally {
+      run.finished = true
+      if (run.flow && mounted.current) {
+        setCreditNotice({ kind: 'error', text: `账号维护结束未确认：${run.cleanupError ?? '原生应用未确认清理完成'}。请重试结束维护` })
+      } else if (run.cancelled && mounted.current) {
+        setCreditNotice({ kind: 'warn', text: '积分查询已取消；仪表盘将刷新已完成的账号结果' })
+      }
+      finishCreditRun(run)
+    }
+  }
 
   const problems = problemAccounts(accounts)
   const topAccounts = [...accounts]
     .sort((a, b) => desktop ? (observedCredits(b) ?? -Infinity) - (observedCredits(a) ?? -Infinity) : (b.live_credits ?? b.credits) - (a.live_credits ?? a.credits))
     .slice(0, 6)
   const gatewayState = gatewayStatusBadge(nativeStatus.gateway_state)
+  const gatewayRunning = nativeStatus.gateway_state === 'running_ready' || nativeStatus.gateway_state === 'running_unavailable'
+  const lanUrls = Array.isArray(nativeStatus.lan_api_base_urls)
+    ? [...new Set((nativeStatus.lan_api_base_urls as unknown[]).filter((url): url is string => typeof url === 'string' && url.length > 0))]
+    : []
+  const observed = accounts.filter(a => observedCredits(a) !== undefined)
+  const freshObserved = creditOutcome ? accounts.filter(a => creditOutcome.okUIDs.has(a.uid) && observedCredits(a) !== undefined) : []
+  const creditValue = creditOutcome
+    ? freshObserved.length ? fmtNum(freshObserved.reduce((sum, a) => sum + observedCredits(a)!, 0)) : '未知'
+    : desktop ? observed.length ? fmtNum(observed.reduce((sum, a) => sum + observedCredits(a)!, 0)) : '未知' : fmtNum(ov?.credits.remain ?? 0)
+  const creditSub = creditBusy
+    ? `已完成 ${creditProgress?.done ?? 0}/${creditProgress?.total ?? '…'}${creditProgress ? ` · 第 ${creditProgress.batch}/${creditProgress.batches} 批` : ''}；当前数字为上次观测`
+    : creditOutcome
+      ? `本次成功 ${creditOutcome.okUIDs.size}/${creditOutcome.total}，仅合计成功且有余额的账号${creditOutcome.okUIDs.size > freshObserved.length ? `；余额未显示 ${creditOutcome.okUIDs.size - freshObserved.length}` : ''}${creditOutcome.failed ? `；失败 ${creditOutcome.failed}` : ''}${creditOutcome.target > creditOutcome.confirmed ? `；未确认 ${creditOutcome.target - creditOutcome.confirmed}` : ''}${creditOutcome.skipped ? `；无凭证 ${creditOutcome.skipped}` : ''}`
+      : desktop ? `已观测 ${observed.length}/${accounts.length} 个账号，未知未计入` : ov && ov.credits.size > 0 ? `总量 ${fmtNum(ov.credits.size)}` : '未查询到配额'
 
   return (
     <div className="dashboard-page">
@@ -120,29 +335,39 @@ export default function Dashboard() {
           </p>
         </div>
         <div className="page-actions">
-          <button className="btn" onClick={() => refresh.current()} disabled={loading}>
+          {onStartGuide && <button className="btn" data-guide="entry" onClick={onStartGuide} disabled={guideOpen}>使用引导</button>}
+          <button className="btn" onClick={() => refresh.current()} disabled={loading || creditBusy}>
             {loading && <Spinner />} 立即刷新
           </button>
         </div>
       </div>
 
       {desktop && (
-        <section className="card dashboard-connection" aria-label="本机 API">
+        <section className="card dashboard-connection" data-guide="gateway" aria-label="本机 API">
           <div className="dashboard-connection-main">
             <h2>本机 API</h2>
             <span className="mono dashboard-connection-url">{String(nativeStatus.api_base_url ?? '未读取')}</span>
             <Badge cls={gatewayState.cls}>{gatewayState.text}</Badge>
           </div>
           <div className="page-actions dashboard-connection-actions">
-            <button className="btn" disabled={!nativeStatus.api_base_url} onClick={() => void copy()}>复制 API 地址</button>
-            <button className="btn" onClick={() => void copy(true)}>复制 API Key</button>
+            <button className="btn" data-guide="copy-address" disabled={!nativeStatus.api_base_url} onClick={() => void copy()}>复制 API 地址</button>
+            <button className="btn" data-guide="copy-key" onClick={() => void copy(true)}>复制 API Key</button>
           </div>
+          {nativeStatus.lan_enabled === true && <div className="dashboard-lan">
+            <strong>局域网地址</strong>
+            {!gatewayRunning ? <p className="desc">API 服务未运行；启动后显示局域网地址。</p>
+              : lanUrls.length ? lanUrls.map((url, index) => <div className="lan-address-row" key={url}>
+                <span className="mono">{url}</span><button className="btn btn-sm" aria-label={`复制局域网地址 ${index + 1}`} onClick={() => void copy(false, url)}>复制地址</button>
+              </div>) : <p className="desc">未找到可用的局域网网卡，请连接 Wi-Fi 或以太网。</p>}
+            <p className="desc">其他设备使用上述地址和相同的 API Key；系统防火墙或访客网络隔离可能阻止连接。</p>
+          </div>}
         </section>
       )}
 
       {loading && !ov && <Spinner label="正在加载仪表盘…" />}
       {error && <Alert kind="error">{error}</Alert>}
       {copyNotice && <Alert kind="info" onClose={() => setCopyNotice(null)}>{copyNotice}</Alert>}
+      {creditNotice && <Alert kind={creditNotice.kind} onClose={() => setCreditNotice(null)}>{creditNotice.text}</Alert>}
       {ov && !ov.gateway_ok && (
         <Alert kind="error">
           <strong>无法连接网关（{ov.gateway_url}）</strong>
@@ -195,8 +420,11 @@ export default function Dashboard() {
             />
             <Stat
               label="剩余积分"
-              value={desktop ? (accounts.some(a => observedCredits(a) !== undefined) ? fmtNum(accounts.reduce((sum, a) => sum + (observedCredits(a) ?? 0), 0)) : '未知') : fmtNum(ov.credits.remain)}
-              sub={desktop ? `已观测 ${accounts.filter(a => observedCredits(a) !== undefined).length}/${accounts.length} 个账号，未知未计入` : ov.credits.size > 0 ? `总量 ${fmtNum(ov.credits.size)}` : '未查询到配额'}
+              value={creditValue}
+              sub={creditSub}
+              buttonSlot={<button className="btn btn-sm" onClick={() => void queryCredits()} disabled={(!creditBusy && (ov.read_only || guideOpen)) || (creditBusy && !creditRun.current)}>
+                {creditBusy ? creditRun.current?.finished && creditRun.current.flow ? '重试结束维护' : '取消查询' : '查询全部积分'}
+              </button>}
             />
           </div>
 
@@ -351,13 +579,14 @@ function Stat({
   label,
   value,
   sub,
-  tone, to,
+  tone, to, buttonSlot,
 }: {
   label: string
   to?: string
   value: string
   sub?: string
   tone?: 'ok' | 'warn' | 'danger'
+  buttonSlot?: ReactNode
 }) {
   const cls = tone === 'ok' ? 'text-ok' : tone === 'warn' ? 'text-warn' : tone === 'danger' ? 'text-danger' : ''
   return (
@@ -365,6 +594,7 @@ function Stat({
       <div className="stat-label">{to ? <Link to={to}>{label}</Link> : label}</div>
       <div className={`stat-value ${cls}`}>{value}</div>
       {sub && <div className="stat-sub">{sub}</div>}
+      {buttonSlot && <div>{buttonSlot}</div>}
     </div>
   )
 }

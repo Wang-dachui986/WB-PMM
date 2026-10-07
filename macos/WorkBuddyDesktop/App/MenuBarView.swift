@@ -1,105 +1,71 @@
-import SwiftUI
 import AppKit
 
-/// 菜单栏品牌图标；服务状态保留在菜单正文和辅助说明中。
-struct MenuBarLabel: View {
+/// 由应用委托持有固定菜单栏入口，不依赖 SwiftUI 窗口或 Scene 是否仍在显示。
+@MainActor
+final class MenuBarController: NSObject, NSMenuDelegate {
+    let statusItem: NSStatusItem
+    private let services: ServiceManager
+    private let onQuit: () -> Void
 
-    @ObservedObject var services: ServiceManager
-    @Environment(\.openWindow) private var openWindow
-
-    private static let icon: NSImage? = {
-        guard let image = NSImage(named: "WBPMMMenuTemplate") else { return nil }
-        image.size = NSSize(width: 28, height: 16)
-        image.isTemplate = true
-        return image
-    }()
-
-    var body: some View {
-        Group {
-            if let icon = Self.icon {
-                Image(nsImage: icon)
+    init(services: ServiceManager, onQuit: @escaping () -> Void) {
+        self.services = services
+        self.onQuit = onQuit
+        statusItem = NSStatusBar.system.statusItem(withLength: 32)
+        super.init()
+        statusItem.behavior = []
+        if let button = statusItem.button {
+            if let image = NSImage(named: "WBPMMMenuTemplate")
+                ?? NSImage(systemSymbolName: "bolt.horizontal.circle", accessibilityDescription: "WB-PMM") {
+                image.size = NSSize(width: 24, height: 16)
+                image.isTemplate = true
+                button.image = image
             } else {
-                Image(systemName: "bolt.horizontal.circle")
-                    .frame(width: 28, height: 16)
+                button.title = "WB"
             }
+            button.setAccessibilityLabel("WB-PMM控制台")
+            button.toolTip = "WB-PMM控制台 · 点击或右键打开菜单"
         }
-        .accessibilityLabel("WB-PMM控制台：\(services.gatewayState.label)")
-        .help(services.gatewayState.detail)
-        .onAppear { AppDelegate.reopenMainWindow = { openWindow(id: AppDelegate.mainWindowID) } }
+        let menu = NSMenu()
+        menu.delegate = self
+        statusItem.menu = menu
+        ensureVisible()
     }
-}
 
-// MARK: - 菜单栏下拉
+    func ensureVisible() { statusItem.isVisible = true }
 
-/// 菜单栏下拉内容。
-///
-/// 只做窗口级动作（设计规范 §2.2）：打开主窗口 / API 启停 / 复制 API 地址 / 完全退出。
-/// **它不是第二套导航** —— 侧栏能到的页面一个都不在这里出现。
-struct MenuBarView: View {
-
-    @EnvironmentObject private var services: ServiceManager
-    @Environment(\.openWindow) private var openWindow
-
-    var body: some View {
-        // 不可点击的状态行
-        Text("WBPMM网关 · \(services.gatewayState.label)")
-
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        menu.addItem(withTitle: "WBPMM网关 · \(services.gatewayState.label)", action: nil, keyEquivalent: "")
         if let health = services.gatewayHealth {
-            Text("可用账号 \(health.healthy) / \(health.total)")
+            menu.addItem(withTitle: "可用账号 \(health.healthy) / \(health.total)", action: nil, keyEquivalent: "")
         }
-
-        Divider()
-
-        Button {
-            AppDelegate.activateForMainWindow()
-            openWindow(id: AppDelegate.mainWindowID)
-        } label: {
-            Label("打开主窗口", systemImage: "macwindow")
-        }
-
-        Divider()
-
-        // 只呈现当前状态允许的动作，避免出现「按钮在但点了报错」。
-        if services.gatewayState.allowsStart {
-            Button { Task { await services.startGateway() } } label: {
-                Label("启动 API 服务", systemImage: "play.fill")
-            }
-        }
-        if services.gatewayState.allowsStop {
-            Button { Task { await services.stopGateway() } } label: {
-                Label("停止 API 服务", systemImage: "stop.fill")
-            }
-        }
-        if services.gatewayState.allowsRestart {
-            Button { Task { await services.restartGateway() } } label: {
-                Label("重启 API 服务", systemImage: "arrow.clockwise")
-            }
-        }
-
-        Divider()
-
-        Button(action: copyAPIBaseURL) {
-            Label("复制 API 地址", systemImage: "doc.on.doc")
-        }
-            .disabled(services.apiBaseURL == nil)
-
-        Button {
-            NSWorkspace.shared.open(AppPaths.logDirectory)
-        } label: {
-            Label("打开日志目录", systemImage: "folder")
-        }
-
-        Divider()
-
-        Button { NSApp.terminate(nil) } label: {
-            Label("完全退出", systemImage: "power")
-        }
+        menu.addItem(.separator())
+        add("打开主窗口", #selector(openWindow), to: menu)
+        menu.addItem(.separator())
+        if services.gatewayState.allowsStart { add("启动 API 服务", #selector(startGateway), to: menu) }
+        if services.gatewayState.allowsStop { add("停止 API 服务", #selector(stopGateway), to: menu) }
+        if services.gatewayState.allowsRestart { add("重启 API 服务", #selector(restartGateway), to: menu) }
+        menu.addItem(.separator())
+        if services.apiBaseURL != nil { add("复制 API 地址", #selector(copyAPIBaseURL), to: menu) }
+        add("打开日志目录", #selector(openLogs), to: menu)
+        menu.addItem(.separator())
+        add("完全退出", #selector(quit), to: menu)
     }
 
-    private func copyAPIBaseURL() {
+    private func add(_ title: String, _ action: Selector, to menu: NSMenu) {
+        let item = menu.addItem(withTitle: title, action: action, keyEquivalent: "")
+        item.target = self
+    }
+
+    @objc private func openWindow() { AppDelegate.showMainWindow() }
+    @objc private func startGateway() { Task { await services.startGateway() } }
+    @objc private func stopGateway() { Task { await services.stopGateway() } }
+    @objc private func restartGateway() { Task { await services.restartGateway() } }
+    @objc private func copyAPIBaseURL() {
         guard let base = services.apiBaseURL else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(base, forType: .string)
-        AppLog.shared.info("已复制 API 地址到剪贴板")
     }
+    @objc private func openLogs() { NSWorkspace.shared.open(AppPaths.logDirectory) }
+    @objc private func quit() { onQuit() }
 }
