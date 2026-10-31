@@ -11,6 +11,7 @@
 package authstore
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -102,6 +103,9 @@ func (s *Store) EnableMaintenance(g *MaintenanceGate) error {
 	if err := checkPrivateDirectory(info); err != nil {
 		return err
 	}
+	if err := fsutil.CheckPrivateACL(s.dir); err != nil {
+		return err
+	}
 	s.privateDir, s.privateInfo = real, info
 	s.maintenance.Store(g)
 	return nil
@@ -126,6 +130,9 @@ func (s *Store) checkDirectory() error {
 		return err
 	}
 	if err := checkPrivateDirectory(info); err != nil {
+		return err
+	}
+	if err := fsutil.CheckPrivateACL(s.dir); err != nil {
 		return err
 	}
 	real, err := filepath.EvalSymlinks(s.dir)
@@ -307,6 +314,7 @@ func Parse(raw []byte) (*Account, error) {
 	if len(raw) > 1<<20 {
 		return nil, fmt.Errorf("凭证文件超过 1 MiB")
 	}
+	raw = bytes.TrimPrefix(raw, []byte{0xef, 0xbb, 0xbf})
 	if len(raw) == 0 {
 		return nil, fmt.Errorf("空凭证文件")
 	}

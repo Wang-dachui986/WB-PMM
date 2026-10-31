@@ -16,6 +16,7 @@ export default function ApiModelsPage() {
   const [selected, setSelected] = useState('')
   const [refreshed, setRefreshed] = useState<Date | null>(null)
   const [busy, setBusy] = useState(false)
+  const [modelsBusy, setModelsBusy] = useState(false)
   const [keyBusy, setKeyBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -47,6 +48,16 @@ export default function ApiModelsPage() {
     setBusy(false)
   }, [readStatus])
   useEffect(() => { if (hasDesktopBridge()) void load() }, [load])
+  const refreshModels = async () => {
+    setModelsBusy(true); setError(null); setNotice(null)
+    try {
+      const data = (await api.models(true)).data ?? []
+      setModels(data); setSelected((old) => data.some((model) => model.id === old) ? old : (data[0]?.id ?? ''))
+      setRefreshed(new Date())
+      setNotice(`已跳过缓存从上游重新拉取，共 ${data.length} 个模型。`)
+    } catch (err) { setError(err instanceof Error ? err.message : '模型列表刷新失败') }
+    finally { setModelsBusy(false) }
+  }
   useEffect(() => {
     if (!hasDesktopBridge()) return
     let active = true
@@ -108,7 +119,7 @@ export default function ApiModelsPage() {
     } catch (err) { setError(`本地检查未通过：${err instanceof Error ? err.message : '服务不可达'}。未访问上游。`) }
     finally { setBusy(false) }
   }
-  if (!hasDesktopBridge()) return <Alert kind="info">接入信息与密钥操作由 macOS 桌面应用提供。</Alert>
+  if (!hasDesktopBridge()) return <Alert kind="info">接入信息与密钥操作由 Windows 桌面应用提供。</Alert>
   const base = typeof nativeStatus?.api_base_url === 'string' ? nativeStatus.api_base_url
     : config ? `http://127.0.0.1:${config.editable.port}/v1` : null
   const lanConfigured = typeof nativeStatus?.lan_enabled === 'boolean' ? nativeStatus.lan_enabled : config?.editable.allow_lan === true
@@ -155,7 +166,8 @@ export default function ApiModelsPage() {
       <p className="hint">其他 Agent 请按所选协议使用对应端点，三种协议共用本机 API 密钥。若客户端自动拼接 /v1/messages（例如 Anthropic SDK 的 base_url），请填服务根地址 {base ? base.slice(0, -3) : '未读取'}。</p>
       <p className="hint">Responses 与 Messages 支持文本、流式回复及函数工具往返。多轮对话由客户端携带完整历史；Responses 的服务端历史引用、后台任务与平台内置工具暂不支持。</p>
     </div>
-    <div className="card"><div className="card-head"><h2>模型列表</h2><span className="hint">最后成功刷新：{refreshed ? refreshed.toLocaleString() : '尚未成功读取'}</span></div>
+    <div className="card"><div className="card-head"><h2>模型列表</h2><span className="hint">最后成功刷新：{refreshed ? refreshed.toLocaleString() : '尚未成功读取'}</span>
+      <button className="btn" disabled={busy || modelsBusy} title="网关默认缓存模型列表 1 小时；新上架模型可点此立即拉取" onClick={() => void refreshModels()}>{modelsBusy && <Spinner />}强制刷新模型列表</button></div>
       {models.length === 0 ? <p>当前没有可显示的模型。请检查 API 服务状态后重新读取。</p> : <>
         <div className="field"><label htmlFor="api-model">模型</label><select id="api-model" value={selected} onChange={(e) => setSelected(e.target.value)}>{models.map((item) => <option value={item.id} key={item.id}>{modelLabel(item)}</option>)}</select></div>
         <button className="btn" disabled={!selected} onClick={() => void copy(selected)}>复制完整模型 ID</button>

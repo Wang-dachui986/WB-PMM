@@ -411,3 +411,91 @@ func TestChatImageTurnAggregation(t *testing.T) {
 		t.Errorf("下一轮（末条 user 换文本）应换聚合键: first=%q next=%q", first, next)
 	}
 }
+
+func TestChatRotationSynthesizesConversationID(t *testing.T) {
+	var reqs []http.Header
+	up := &upstream.Client{
+		HTTP: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			reqs = append(reqs, r.Header.Clone())
+			// 全部 402 余额不足 → 每号冷却换号，轮转后 503。
+			return &http.Response{
+				StatusCode: 402,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"code":1,"msg":"余额不足"}`)),
+			}, nil
+		})},
+		ChatHTTP: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			reqs = append(reqs, r.Header.Clone())
+			return &http.Response{
+				StatusCode: 402,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"code":1,"msg":"余额不足"}`)),
+			}, nil
+		})},
+		ChatBaseCN:    "https://fake.example",
+		BillingBaseCN: "https://fake.example",
+	}
+	p := testPoolWith(
+		&auth.Auth{UID: "a1", AccessToken: "at-a1", ExpiresAt: 9999999999},
+		&auth.Auth{UID: "a2", AccessToken: "at-a2", ExpiresAt: 9999999999},
+		&auth.Auth{UID: "a3", AccessToken: "at-a3", ExpiresAt: 9999999999},
+	)
+	h := NewHandler(Config{Pool: p, Upstream: up})
+	req := httptest.NewRequest("POST", "/v1/chat/completions",
+		strings.NewReader(`{"model":"glm-5.2","messages":[]}`))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 503 {
+		t.Fatalf("code=%d body=%s (want 503 all fail)", rec.Code, rec.Body)
+	}
+	if len(reqs) < 3 {
+		t.Fatalf("upstream calls=%d want >=3 (rotation)", len(reqs))
+	}
+	// 聚合主键：所有出站全相同。
+	first := reqs[0].Get("X-Conversation-Request-ID")
+	if first == "" {
+		t.Fatal("X-Conversation-Request-ID missing on outbound")
+	}
+	for i, hdr := range reqs[1:] {
+		if got := hdr.Get("X-Conversation-Request-ID"); got != first {
+			t.Errorf("outbound %d X-Conversation-Request-ID=%q want %q (reuse across rotation)", i+2, got, first)
+		}
+	}
+	// 对话透传。
+	for i, hdr := range reqs {
+		if got := hdr.Get("X-Conversation-ID"); got != first {
+			t.Errorf("outbound %d X-Conversation-ID=%q want conv-1", i+1, got)
+		}
+	}
+	// Root = conversationRequestID。
+	for i, hdr := range reqs {
+		if got := hdr.Get("X-Root-Request-ID"); got != first {
+			t.Errorf("outbound %d X-Root-Request-ID=%q want %q", i+1, got, first)
+		}
+	}
+	// 消息级 ID（每条消息独立）：各出站不同（每条 ChatStream 独立），格式合法且
+	// X-Conversation-Message-ID == X-Request-ID。
+	msgIDs := map[string]bool{}
+	for i, hdr := range reqs {
+		mid := hdr.Get("X-Conversation-Message-ID")
+		if mid == "" || mid != hdr.Get("X-Request-ID") {
+			t.Errorf("outbound %d message id mismatch: msg=%q request=%q", i+1, mid, hdr.Get("X-Request-ID"))
+		}
+		msgIDs[mid] = true
+	}
+	if len(msgIDs) != len(reqs) {
+		t.Errorf("each outbound message should have distinct message id, got %d unique for %d calls", len(msgIDs), len(reqs))
+	}
+	// 链路族始终合法。
+	for i, hdr := range reqs {
+		if trace := hdr.Get("X-B3-TraceId"); !isValidB3Trace(trace) {
+			t.Errorf("outbound %d X-B3-TraceId=%q not 16/32 hex", i+1, trace)
+		}
+		if span := hdr.Get("X-B3-SpanId"); len(span) != 16 || !isValidB3Trace(span) {
+			t.Errorf("outbound %d X-B3-SpanId=%q not 16 hex", i+1, span)
+		}
+		if got := hdr.Get("X-B3-Sampled"); got != "1" {
+			t.Errorf("outbound %d X-B3-Sampled=%q want 1", i+1, got)
+		}
+	}
+}

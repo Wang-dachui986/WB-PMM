@@ -1,48 +1,51 @@
-# Local credentials and runtime data
+# Private runtime data: never publish accounts or keys
 **/auths/
 **/data/
 **/backups/
+**/logs/
 **/config.json
 **/gateway-config.json
+**/panel-config.json
+**/state.json
+**/token-history.json
 **/.apikey
 **/.env
 **/.env.*
 *.key
 *.pem
+*.p12
+*.pfx
+*.mobileprovision
 *.log
 *.pid
 
-# Dependencies and build output
+# Dependencies and generated output
+**/node_modules
 **/node_modules/
 **/dist/
 !panel/internal/webui/dist/
 panel/internal/webui/dist/*
 !panel/internal/webui/dist/.gitkeep
+**/bin/
+**/obj/
 **/__pycache__/
-**/*.pyc
-**/*.tsbuildinfo
+*.pyc
+*.tsbuildinfo
 **/.build/
-build/
-release/
-releases/
-bin/
-*.app/
-*.dmg
-*.zip
-**/xcuserdata/
 **/DerivedData/
+**/xcuserdata/
+build/
+releases/
+*.app/
+*.pkg
+*.dmg
+*.exe
+*.dll
+*.pdb
+*.zip
 
-# Editor and filesystem metadata
+# Local metadata
 .DS_Store
 ._*
 .idea/
 .vscode/
-
-**/obj/
-**/bin/
-*.pkg
-*.exe
-*.dll
-*.pdb
-**/state.json
-**/token-history.json

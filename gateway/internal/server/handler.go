@@ -93,6 +93,9 @@ type Handler struct {
 	// wafIP WAF IP 级拦截状态机（fail-fast，wafip.go）：短窗多号 WAF 403 →
 	// 激活期轮转遇 WAF 403 直接终止（不放大请求量）。进程内状态、重启清零。
 	wafIP wafIPGate
+	// rateChain 429 长重置连锁保护（ratechain.go）：短窗多号对同一模型返回长重置
+	// 429 → 激活期轮转遇长重置 429 直接终止（不把整个池拖进冷却）。进程内状态。
+	rateChain rateChainGate
 }
 
 // NewHandler 构建 handler。
@@ -294,11 +297,35 @@ const (
 )
 
 // models 返回模型列表：纯动态（缓存 1h），失败/无号返回空列表（无静态兜底）。
+// ?refresh=1（或 true）强制刷新：跳过 CN 1h 缓存与 5min 负缓存、global 探测缓存，
+// 立即向上游重拉（上游新上架模型不必等缓存过期或重启网关）。
 func (h *Handler) models(w http.ResponseWriter, r *http.Request) {
+	if forceRefresh(r) {
+		h.invalidateModelCaches()
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"object": "list",
 		"data":   h.modelList(),
 	})
+}
+
+// forceRefresh 判定 /v1/models 请求是否要求跳过缓存（refresh=1/true）。
+func forceRefresh(r *http.Request) bool {
+	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get("refresh"))) {
+	case "1", "true":
+		return true
+	}
+	return false
+}
+
+// invalidateModelCaches 让 CN 动态模型缓存与 global 探测缓存（含负缓存）失效，
+// 下一次 modelList 必定向上游重拉。重拉失败与缓存自然过期后失败同语义（该域空列表）。
+func (h *Handler) invalidateModelCaches() {
+	dynamicModelsCache.Lock()
+	dynamicModelsCache.fetched = time.Time{}
+	dynamicModelsCache.lastFail = time.Time{}
+	dynamicModelsCache.Unlock()
+	h.cfg.Upstream.InvalidateGlobalModels()
 }
 
 // globalModels 国际版（global realm）模型名名单（PLAN §7.2 附录 21 名）——已删。
@@ -316,6 +343,38 @@ func fmtCreditsPrefix(raw string) string {
 		return ""
 	}
 	return "[" + s + " credit]"
+}
+
+// addListingCompat 补上第三方模型目录客户端要读的能力字段（issue #156：Magpie）。
+//
+// 它们不看我们自己的 supports_images / reasoning_supported_efforts，只看
+// `modalities.input` 里有没有 "image"、以及 `supported_reasoning_levels` 里每项的
+// `effort`。我们的字段是既有约定（面板与别的客户端在用），所以这里**只增不改**：
+// 两边同时输出，谁都能读。模型 ID 上的 cn:/global: 前缀保持不变 —— 它区分版本，
+// 不能为了目录兜底而抹掉。
+func addListingCompat(entry map[string]any) map[string]any {
+	if entry["supports_images"] == true {
+		entry["modalities"] = map[string]any{"input": []string{"text", "image"}}
+	}
+	var efforts []string
+	switch raw := entry["reasoning_supported_efforts"].(type) {
+	case []string:
+		efforts = raw
+	case []any:
+		for _, v := range raw {
+			if s, ok := v.(string); ok {
+				efforts = append(efforts, s)
+			}
+		}
+	}
+	if len(efforts) > 0 {
+		levels := make([]map[string]any, 0, len(efforts))
+		for _, e := range efforts {
+			levels = append(levels, map[string]any{"effort": e})
+		}
+		entry["supported_reasoning_levels"] = levels
+	}
+	return entry
 }
 
 // applyModelInfoFields 把上游模型对象全字段（ModelInfo）按「空值省略」写出规则
@@ -406,6 +465,7 @@ func (h *Handler) modelList() []map[string]any {
 				entry["reasoning_default_effort"] = def
 			}
 		}
+		addListingCompat(entry)
 		out = append(out, entry)
 	}
 	// global 模型名单：仅 GlobalEnabled=true 时列出（逃生门）。
@@ -449,6 +509,7 @@ func (h *Handler) modelList() []map[string]any {
 					entry["reasoning_default_effort"] = def
 				}
 			}
+			addListingCompat(entry)
 			out = append(out, entry)
 		}
 	}
@@ -688,8 +749,10 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	// 是服务端指令，走本网关的客户端不属于该形态）。此处**轮转循环外**生成一次，
 	// 循环内每次出站原样复用 → 换号/重试/降级全部同 ID，后台不再碎片化（此前网关
 	// 一个都不发，上游按 HTTP 请求逐条记账，同一对话几十上百个 RequestID）。
-	//   - conversationID：body 提取（透传客户端原值，缺省空串——不伪造，见
-	//     ResolveConversationID；官方后台不校验一致，空会话则不建立聚合键）；
+	//   - conversationID：body 提取（透传客户端原值）；缺省时在下方用轮级聚合键
+	//     ConversationHeaderID 兜底出站 X-Conversation-ID（上游渠道校验要求该头恒在；
+	//     兜底值只进出站头、不进 prompt_cache_key 会话段，缓存键仍按客户端原值——
+	//     轮级键逐轮变化不会打碎前缀缓存）；
 	//   - conversationRequestID：入站 X-Conversation-Request-ID 透传优先（客户端已
 	//     有自己的对话轮 ID 则以客户端为准）。派生分两态：
 	//     * turnKey 非空（有末条 user 消息）→ 带会话键客户端走 TurnRequestID(
@@ -716,6 +779,15 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// 无会话键也无轮级键：请求级随机（轮转内捕获一次即共享）。
 		chatMeta.ConversationRequestID = session.TurnRequestID("")
+	}
+	// 上游渠道校验要求出站 X-Conversation-ID 恒在（逐账号直连实测：只要头在场即通过，
+	// 不校验会话存在性；缺头则返回 400 code=11-128 "conversation id missing"）。客户端
+	// 没带 conversationId 时，用上面已算好的轮级聚合键兜底——同轮内重试/换号/降级复用
+	// 同一会话 ID，与 ConversationRequestID 的聚合语义对齐（#170 统一轮级）。
+	// 只写 ConversationHeaderID 而不覆盖 ConversationID：后者仍是 prompt_cache_key
+	// 会话段的哈希源，保持无会话键客户端的「每账号恒键」前缀缓存命中率不被打碎。
+	if chatMeta.ConversationID == "" {
+		chatMeta.ConversationHeaderID = chatMeta.ConversationRequestID
 	}
 	chatMeta.TraceID = r.Header.Get("X-Trace-ID")
 
@@ -871,15 +943,15 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			}
 			// 图片格式/数据无效：立即透传上游原文回客户端，不罚号不轮转。
 			// 同一 body 换账号仍是同样的解析结果，轮转只会放大无效请求。
-			if kind == upstream.ErrImageInvalid {
+			if kind == upstream.ErrImageInvalid || kind == upstream.ErrToolCallMismatch {
 				h.applyErrorPolicy(acct.UID, kind, string(respBody), bareModel, uerr)
 				fail(acct.UID)
 				msg := string(respBody)
 				if strings.TrimSpace(msg) == "" {
-					msg = "image request was rejected by upstream"
+					msg = kind.String() + " request was rejected by upstream"
 				}
-				writeOpenAIErrorHint(w, http.StatusBadRequest, "image_invalid", msg,
-					h.hintOf(upstream.ErrImageInvalid, string(respBody), bareModel, reqHasImage, uerr))
+				writeOpenAIErrorHint(w, http.StatusBadRequest, kind.String(), msg,
+					h.hintOf(kind, string(respBody), bareModel, reqHasImage, uerr))
 				st.status = http.StatusBadRequest
 				return
 			}
@@ -894,6 +966,11 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 			// 打同一出口 IP，加重风控。账号级软冷却已在上方 applyErrorPolicy 照常记账
 			// （单号偶发 403 仍冷却），IP 级状态只改变「是否继续轮转」——协同不叠加。
 			if kind == upstream.ErrWafBlock && h.wafIP.noteWaf(acct.UID) {
+				break
+			}
+			// 429 连锁保护（ratechain.go）：同时落盘 429 原文。短窗多号对同一模型
+			// 返回长重置 429 → 共享限流，继续换号只会把剩余账号也冷却到重置时刻。
+			if kind == upstream.ErrSoftRate && h.noteSoftRate(acct, bareModel, status, string(respBody), uerr) {
 				break
 			}
 			if !rotateBackoff(i, r.Context()) {
@@ -1176,7 +1253,7 @@ func (h *Handler) applyErrorPolicy(uid string, kind upstream.ErrKind, body, mode
 		// 号都超限）。零动作（不冷却/不熔断/不 NoteError，同 ErrContentBlocked
 		// 待遇），chatCompletions 已直接透传原文返回不轮转——该分支只为文档完备，
 		// 不指望走到换号路径。
-	case upstream.ErrImageInvalid:
+	case upstream.ErrImageInvalid, upstream.ErrToolCallMismatch:
 		// 图片格式/数据无效：请求的问题不是账号的问题（同一 body 换任何号都会
 		// 得到相同解析错误）。零动作，chatCompletions 已 fail-fast 透传。
 	case upstream.ErrBadParams:

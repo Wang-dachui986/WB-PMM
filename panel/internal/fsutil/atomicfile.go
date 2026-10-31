@@ -18,6 +18,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"syscall"
 )
 
@@ -29,35 +31,55 @@ import (
 //
 // 返回的 fallback 为 true 表示走了回退路径（非原子），供调用方在日志/响应中提示。
 func WriteFileAtomic(path string, raw []byte, perm os.FileMode) (fallback bool, err error) {
-	if err := os.MkdirAll(dirOf(path), 0o700); err != nil {
+	dir := dirOf(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return false, fmt.Errorf("创建目录: %w", err)
 	}
+	if err := CheckPrivateACL(dir); err != nil {
+		return false, err
+	}
+	if err := CheckPrivateACL(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
 
-	tmp := path + ".tmp"
-	// 先写临时文件：同时也验证了目标目录可写，避免"回退路径写到一半才发现不可写"。
-	if err := os.WriteFile(tmp, raw, perm); err != nil {
-		// tmp 都写不了（目录只读/权限不足）：直接报错，不要动原文件。
+	f, err := os.CreateTemp(dir, ".workbuddy-*.tmp")
+	if err != nil {
+		return false, fmt.Errorf("创建临时文件: %w", err)
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	defer f.Close()
+	if err := SecurePrivateACL(tmp); err != nil {
+		return false, err
+	}
+	if err := f.Chmod(perm); err != nil {
+		return false, err
+	}
+	if _, err := f.Write(raw); err != nil {
 		return false, fmt.Errorf("写临时文件: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return false, err
 	}
 	if err := os.Rename(tmp, path); err == nil {
 		return false, nil
 	} else if !isBindMountRenameErr(err) {
-		_ = os.Remove(tmp)
 		return false, fmt.Errorf("替换文件: %w", err)
 	}
 
 	// ── 回退：单文件 bind mount，rename 无法替换目标 inode ──────────────
 	// 此时 tmp 已写好，把它内容原地灌进目标文件。
 	if err := overwriteInPlace(path, raw, perm); err != nil {
-		_ = os.Remove(tmp)
 		return false, fmt.Errorf("原地写入失败（目标文件可能是 Docker 单文件挂载）: %w", err)
 	}
-	_ = os.Remove(tmp)
 	return true, nil
 }
 
 // overwriteInPlace 截断并原地重写文件内容，完成后 fsync 确保落盘。
 func overwriteInPlace(path string, raw []byte, perm os.FileMode) error {
+	if err := CheckPrivateACL(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	// 目标不存在（首次创建）时先建出来。
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
@@ -88,17 +110,12 @@ func overwriteInPlace(path string, raw []byte, perm os.FileMode) error {
 // EBUSY：Docker 单文件挂载最典型的表现（"device or resource busy"）。
 // EXDEV：跨设备 rename（tmp 与目标不在同一文件系统）。
 func isBindMountRenameErr(err error) bool {
+	if runtime.GOOS == "windows" {
+		return false // A sharing violation must never trigger a non-atomic truncate.
+	}
 	return errors.Is(err, syscall.EBUSY) || errors.Is(err, syscall.EXDEV)
 }
 
 func dirOf(path string) string {
-	for i := len(path) - 1; i >= 0; i-- {
-		if path[i] == '/' || path[i] == '\\' {
-			if i == 0 {
-				return "/"
-			}
-			return path[:i]
-		}
-	}
-	return "."
+	return filepath.Dir(path)
 }

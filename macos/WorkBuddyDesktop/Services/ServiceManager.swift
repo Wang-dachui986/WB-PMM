@@ -1234,7 +1234,7 @@ final class ServiceManager: ObservableObject {
         case let .setEnabled(uid, enabled): return try await setAccountEnabled(uid: uid, enabled: enabled, owner: owner)
         case let .delete(uid):
             let flow = try activeMaintenance(owner: owner, action: "delete")
-            guard flow.uids == [uid], let cookie = panelSessionCookie else { throw NativeBridge.MaintenanceError.stale_maintenance }
+            guard flow.uids.contains(uid), let cookie = panelSessionCookie else { throw NativeBridge.MaintenanceError.stale_maintenance }
             try await PanelSessionClient(port: flow.port).deleteAccount(uid: uid, cookie: cookie, instance: flow.instance, generation: flow.generation)
             guard (try activeMaintenance(owner: owner, action: "delete")) === flow else { throw NativeBridge.MaintenanceError.stale_maintenance }
             settings.removeAccountNote(uid: uid)

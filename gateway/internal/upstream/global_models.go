@@ -108,6 +108,15 @@ func (c *Client) GlobalModelInfosSnapshot() []ModelInfo {
 	return c.globalModels.infos
 }
 
+// InvalidateGlobalModels 让 global 探测缓存（成功缓存与 5min 负缓存）失效，下一次
+// FetchGlobalModels / FetchGlobalModelInfos 必定重新探测（/v1/models?refresh=1）。
+func (c *Client) InvalidateGlobalModels() {
+	c.globalModels.Lock()
+	c.globalModels.fetched = time.Time{}
+	c.globalModels.lastFail = time.Time{}
+	c.globalModels.Unlock()
+}
+
 // fetchGlobalModelsOnce 单次探测决策（缓存命中/负缓存/触发探测），返回 (names, infos)。
 // 纯动态：成功 = 探测结果去重（不与任何静态名单合并）；一切失败 = nil（不回落静态）。
 // infos 仅对象形态成功探测时非 nil。

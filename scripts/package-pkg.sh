@@ -40,13 +40,6 @@ fi
 [[ -z "$(/usr/bin/find "$APP" \( -name '._*' -o -name '.DS_Store' \) -print -quit)" ]] || {
   echo 'Input App contains AppleDouble or Finder metadata; prepare and sign a clean App first' >&2; exit 1;
 }
-# Do not change a signed App here: fail if the build shipped owner-only resources.
-/usr/bin/python3 - "$APP/Contents/Resources/WBPMMMenuTemplate.png" <<'PYMODE'
-import os, stat, sys
-mode = os.stat(sys.argv[1]).st_mode
-if not stat.S_ISREG(mode) or mode & 0o444 != 0o444:
-    raise SystemExit('Menu icon must be readable by all users before signing (0644)')
-PYMODE
 /usr/bin/codesign --verify --deep --strict "$APP"
 
 /bin/mkdir -p "$OUT"

@@ -45,6 +45,8 @@ func GatewayHint(kind ErrKind, msg string, ctx HintContext) string {
 	switch kind {
 	case ErrPromptTooLong:
 		return "request context exceeds the model's limit; reduce history/message size"
+	case ErrToolCallMismatch:
+		return "tool calls and results do not match; repair the conversation history before retrying"
 	case ErrImageInvalid:
 		return "image request was rejected by upstream; check image_url format and image data"
 	case ErrWafBlock:

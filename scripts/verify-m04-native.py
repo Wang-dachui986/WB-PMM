@@ -99,7 +99,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header('Content-Length',str(len(raw))); self.end_headers(); self.wfile.write(raw)
         else: self.reply({},404)
     def do_DELETE(self):
-        assert panel and self.path=='/api/accounts/fake001?confirm=fake001'
+        assert panel and self.path in ('/api/accounts/fake001?confirm=fake001','/api/accounts/fake002?confirm=fake002')
         self.business('delete')
         event('delete')
         opt=options()
@@ -357,6 +357,10 @@ import Darwin
         check(invalid.allSatisfy { NativeBridge.maintenanceRequest($0)==nil },"strict actions UID counts keys and decimal generation")
         check(NativeBridge.maintenanceRequest(["operation":"begin","action":"login","uids":[]]) != nil,"new login supports unknown UID")
         check(NativeBridge.maintenanceRequest(["operation":"begin","action":"reauthorize","uids":["fake001"]]) != nil,"reauthorization requires selected UID")
+        let batchUIDs=(0..<100).map { "fake-\($0)" }
+        check(NativeBridge.maintenanceRequest(["operation":"begin","action":"delete","uids":batchUIDs]) != nil,"delete accepts at most 100 selected UIDs")
+        check(NativeBridge.maintenanceRequest(["operation":"begin","action":"delete","uids":batchUIDs+["extra-uid"]]) == nil,"delete rejects over 100 UIDs")
+        check(NativeBridge.maintenanceRequest(["operation":"begin","action":"delete","uids":[]]) == nil,"delete never defaults to all accounts")
         let status=await NativeBridge.dispatch(.init(id:"status",action:"desktop.getStatus",payload:[:]),
             statusProvider:{ ["panel_control_key":"sentinel","password":"sentinel","maintenance_generation":"2"] },performAction:{ _ in nil })
         check(!NativeBridge.encodeForJavaScript(status).contains("sentinel"),"bridge status does not disclose secrets")

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"workbuddy2api/internal/logfmt"
+	"workbuddy2api/internal/privatefs"
 )
 
 // Auth 是归一化后的账号凭证（来源可以是插件 OAuth 嵌套形或手写扁平形）。
@@ -31,11 +32,11 @@ type Auth struct {
 	//
 	// 命名注记：Go 不允许字段与方法同名，持久化字段用未导出 realm，计算访问器用
 	// 导出的 Realm()（跨包调用全部走方法）。Parse/SaveAtomic/login 在包内读写字段。
-	realm          string
-	UID            string
-	EnterpriseID   string
-	Nickname       string
-	FilePath       string // 来源文件；refresh 后原子写回此处
+	realm        string
+	UID          string
+	EnterpriseID string
+	Nickname     string
+	FilePath     string // 来源文件；refresh 后原子写回此处
 
 	// DeviceToken 设备风控 Token（X-Device-Token 头），来源 auth 文件的 device_token 键。
 	// 缺省为空 = 不注入该头（容器内无桌面端 Turing SDK 的常见部署）。
@@ -313,11 +314,7 @@ func (a *Auth) SaveAtomic() error {
 	if err != nil {
 		return err
 	}
-	tmp := a.FilePath + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, a.FilePath)
+	return privatefs.WriteAtomic(a.FilePath, raw)
 }
 
 // AuthFileGlob auth 文件的统一 glob 模式（宽侧：workbuddy*.json）。
@@ -331,11 +328,19 @@ const AuthFileGlob = "workbuddy*.json"
 // 供 cmd 运维工具复用：只列文件、不解析不迁移（LoadDir 才做 backfill 等副作用），
 // 保持 signin/credit/trial 原有的「逐文件 Parse、损坏即跳过/报行错」流程不变。
 func LoadAuthFiles(dir string) ([]string, error) {
+	if err := privatefs.CheckPrivateACL(dir); err != nil {
+		return nil, err
+	}
 	files, err := filepath.Glob(filepath.Join(dir, AuthFileGlob))
 	if err != nil {
 		return nil, err
 	}
 	sort.Strings(files)
+	for _, file := range files {
+		if err := privatefs.CheckPrivateACL(file); err != nil {
+			return nil, err
+		}
+	}
 	return files, nil
 }
 

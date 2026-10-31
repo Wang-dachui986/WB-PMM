@@ -27,8 +27,8 @@ MENU_ICON_FILE = "WBPMMMenuTemplate.png"
 BUNDLE_ID = "cn.workbuddy.desktop"
 DEPLOYMENT_TARGET = "14.0"
 SWIFT_VERSION = "6.0"
-MARKETING_VERSION = "1.0.5"
-BUILD_NUMBER = "6"
+MARKETING_VERSION = "1.0.11"
+BUILD_NUMBER = "12"
 
 # 分组 → 源文件（相对 macos/WorkBuddyDesktop/）
 GROUPS: dict[str, list[str]] = {

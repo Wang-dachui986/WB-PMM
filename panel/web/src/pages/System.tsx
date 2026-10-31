@@ -62,7 +62,7 @@ function DesktopSystem() {
       <dt>API 地址</dt><dd className="mono">{String(status.api_base_url ?? '未读取')}</dd><dt>本次进程运行时长</dt><dd>{typeof status.uptime_seconds === 'number' ? `${Math.floor(status.uptime_seconds)} 秒` : '未运行'}</dd>
       <dt>可用 / 总账号</dt><dd>{String(status.healthy_accounts ?? '未知')} / {String(status.total_accounts ?? '未知')}</dd><dt>状态观测时间</dt><dd>{fmtISO(status.updated_at as string)}</dd>
       <dt>原生能力</dt><dd>{commands.length} 个固定命令</dd></dl>
-      <p>启停与重启请使用原生服务栏或菜单栏；<Link to="/config">网关配置</Link> · <Link to="/logs">日志与诊断</Link></p></div>
+      <p>启停与重启请使用原生服务栏或系统托盘；<Link to="/config">网关配置</Link> · <Link to="/logs">日志与诊断</Link></p></div>
     <div className="card"><div className="card-head"><h2>应用信息</h2></div><dl className="kv"><dt>版本 / 构建</dt><dd>{about.app_version ?? '未读取'} / {about.app_build ?? '未读取'}</dd>
       <dt>构建时间</dt><dd>{about.build_time === 'unrecorded' ? '此构建未记录' : about.build_time ?? '未读取'}</dd><dt>网关固定提交</dt><dd className="mono">{about.gateway_commit ?? '未读取'}</dd><dt>面板固定提交</dt><dd className="mono">{about.panel_commit ?? '未读取'}</dd></dl></div>
     <div className="card"><div className="card-head"><h2>任务历史</h2><span className="hint">本次面板进程最近 20 条</span></div>

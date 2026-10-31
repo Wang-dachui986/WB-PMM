@@ -392,7 +392,7 @@ final class NoRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
 
     static func region(_ domain: String) throws -> String {
         switch domain {
-        case "", "copilot.tencent.com": return "cn"
+        case "", "copilot.tencent.com", "codebuddy.cn", "www.codebuddy.cn": return "cn"
         case "workbuddy.ai", "www.workbuddy.ai": return "global"
         default: throw NativeBridge.MaintenanceError.region_conflict
         }
@@ -405,8 +405,13 @@ final class NoRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
         defer { try? handle.close() }
         var st = stat()
         guard fstat(fd, &st) == 0, st.st_mode & S_IFMT == S_IFREG, st.st_size > 0, st.st_size <= 1 << 20,
-              let data = try handle.read(upToCount: (1 << 20) + 1), data.count <= 1 << 20,
-              String(data: data, encoding: .utf8) != nil,
+              let bytes = try handle.read(upToCount: (1 << 20) + 1), bytes.count <= 1 << 20 else {
+            throw NativeBridge.MaintenanceError.invalid_file
+        }
+        var data = bytes
+        // Windows editors may prepend a UTF-8 BOM; send canonical UTF-8 to the panel.
+        if data.starts(with: [0xEF, 0xBB, 0xBF]) { data.removeFirst(3) }
+        guard String(data: data, encoding: .utf8) != nil,
               let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw NativeBridge.MaintenanceError.invalid_file
         }

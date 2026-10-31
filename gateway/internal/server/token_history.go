@@ -11,6 +11,7 @@ import (
 	"sort"
 	"sync"
 	"time"
+	"workbuddy2api/internal/privatefs"
 )
 
 // Hourly aggregates only: no prompts, responses, keys or account identifiers.
@@ -150,20 +151,7 @@ func (h *tokenHistory) flush() {
 	}
 }
 func writeTokenHistory(path string, raw []byte) error {
-	f, err := os.CreateTemp(filepath.Dir(path), ".token-history-*")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	defer os.Remove(tmp)
-	if _, err = f.Write(raw); err != nil {
-		f.Close()
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return privatefs.WriteAtomic(path, raw)
 }
 
 // Dirty-only, once per minute plus clean shutdown; never write once per request.

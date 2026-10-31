@@ -87,7 +87,11 @@ func (g *MaintenanceGate) Grant(p MaintenancePermit) error {
 		if len(p.UIDs) > 1 {
 			return ErrMaintenanceRequired
 		}
-	case MaintainImport, MaintainDelete:
+	case MaintainDelete:
+		if len(p.UIDs) < 1 || len(p.UIDs) > 100 {
+			return ErrMaintenanceRequired
+		}
+	case MaintainImport:
 		if len(p.UIDs) != 1 {
 			return ErrMaintenanceRequired
 		}

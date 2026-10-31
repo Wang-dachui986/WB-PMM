@@ -131,7 +131,8 @@ enum NativeBridge {
                   uids.allSatisfy(validUID), Set(uids).count == uids.count else { return nil }
             switch action {
             case "login": guard uids.isEmpty else { return nil }
-            case "reauthorize", "delete": guard uids.count == 1 else { return nil }
+            case "reauthorize": guard uids.count == 1 else { return nil }
+            case "delete": guard (1...100).contains(uids.count) else { return nil }
             case "refresh", "credits": guard (1...20).contains(uids.count) else { return nil }
             default: return nil // import 只由后续原生文件预览确认流程进入。
             }

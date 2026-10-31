@@ -11,11 +11,16 @@ const require = createRequire(path.join(web, 'package.json'))
 const out = fs.realpathSync(process.argv[2])
 assert.ok(out.startsWith('/private/tmp/'), 'use an isolated temporary output directory')
 require('esbuild').buildSync({
-  stdin: { contents: `export {pollDashboard,problemAccounts,queryAllCredits} from './src/pages/Dashboard'; export {api,ApiError} from './src/api'`, resolveDir: web, loader: 'ts' },
+  stdin: { contents: `export {pollDashboard,problemAccounts,queryAllCredits} from './src/pages/Dashboard'; export {api,ApiError} from './src/api'; export {creditStatusBadge,statusBadge} from './src/ui'`, resolveDir: web, loader: 'ts' },
   bundle: true, platform: 'node', format: 'cjs', outfile: path.join(out, 'dashboard.cjs'),
 })
-const { pollDashboard, problemAccounts, queryAllCredits, api, ApiError } = require(path.join(out, 'dashboard.cjs'))
+const { pollDashboard, problemAccounts, queryAllCredits, api, ApiError, creditStatusBadge, statusBadge } = require(path.join(out, 'dashboard.cjs'))
 assert.deepEqual(problemAccounts(['healthy','disabled','token_expired','cooling','missing_credential'].map(status=>({uid:status,status}))).map(account=>account.uid),['disabled','token_expired','cooling','missing_credential'])
+assert.equal(problemAccounts([{uid:'billing-rejected',status:'healthy',credits_error:'401'}]).length, 1)
+assert.equal(statusBadge('healthy').text, '可调度')
+assert.equal(creditStatusBadge('auth_rejected').cls, 'badge-danger')
+assert.equal(creditStatusBadge('ok').cls, 'badge-ok')
+assert.equal(creditStatusBadge().cls, 'badge-warn')
 console.log('PASS dashboard problem count includes missing credential and excludes healthy')
 if (process.argv.includes('--presentation-only')) process.exit(0)
 const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve() }
@@ -157,6 +162,9 @@ assert.equal(progress.at(-1).done, 100)
 assert.equal(result.confirmed, 100)
 assert.equal(result.okUIDs.size, 99)
 assert.equal(result.failed, 1)
+assert.deepEqual(result.failures, [{ uid: uids[43], message: '上游未返回失败详情' }])
+assert.equal(result.failureReasons.length, 1)
+assert.ok(result.failureReasons[0])
 assert.equal(result.issue, undefined)
 console.log('PASS 100 accounts query in five leased batches; failed account is excluded')
 
@@ -206,6 +214,7 @@ const incompleteResult = await queryAllCredits(uids, true, incomplete, () => {},
 })
 assert.equal(incompleteBatches, 1)
 assert.equal(incompleteResult.confirmed, 1)
+assert.deepEqual(incompleteResult.failures, [])
 assert.match(incompleteResult.issue, /未完整返回结果/)
 console.log('PASS incomplete batch stops further batches and preserves unconfirmed count')
 

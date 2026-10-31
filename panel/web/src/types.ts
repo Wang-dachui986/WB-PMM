@@ -35,6 +35,8 @@ export interface Account {
   last_err?: string
 
   credits: number
+  credits_status?: 'ok' | 'auth_rejected' | 'failed'
+  credits_error?: string
   live_credits?: number
   credits_at?: string
 }

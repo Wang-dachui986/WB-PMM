@@ -4,13 +4,13 @@ import { Link } from 'react-router-dom'
 import { api, ApiError } from '../api'
 import { beginMaintenance, desktopCommand, hasDesktopBridge, subscribeDesktopGatewayStatus, type MaintenanceFlow } from '../desktopBridge'
 import type { Account, Overview, StatsResponse, TaskView } from '../types'
-import { Alert, Badge, observedCredits, displayName, fmtDuration, fmtISO, fmtNum, gatewayStatusBadge, Spinner, statusBadge } from '../ui'
+import { Alert, Badge, observedCredits, displayName, fmtDuration, fmtISO, fmtNum, gatewayStatusBadge, Spinner, creditStatusBadge, statusBadge } from '../ui'
 
 // Keep both reads in one flight, including while a previous page is leaving.
 let pendingDashboard: Promise<unknown> | undefined
 
 export const problemAccounts = (accounts: Account[]) => accounts.filter(
-  a => a.status === 'disabled' || a.status === 'token_expired' || a.status === 'cooling' || a.status === 'missing_credential',
+  a => a.status === 'disabled' || a.status === 'token_expired' || a.status === 'cooling' || a.status === 'missing_credential' || !!a.credits_error,
 )
 
 export function pollDashboard(onPage: (overview: Overview, accounts: Account[]) => void,
@@ -90,7 +90,8 @@ export function pollDashboard(onPage: (overview: Overview, accounts: Account[]) 
 }
 
 type CreditProgress = { done: number; total: number; batch: number; batches: number }
-type CreditResult = { okUIDs: Set<string>; failed: number; confirmed: number; issue?: string; batches: number }
+type CreditFailure = { uid: string; message: string }
+type CreditResult = { failures: CreditFailure[]; okUIDs: Set<string>; failed: number; confirmed: number; issue?: string; batches: number; failureReasons: string[] }
 type CreditRun = { cancelled: boolean; finished: boolean; flow: MaintenanceFlow | null; cleanupError?: string; cancelWait?: Promise<void>; signalCancel?: () => void }
 type CreditOutcome = CreditResult & { total: number; target: number; skipped: number }
 
@@ -116,6 +117,8 @@ export async function queryAllCredits(
 ): Promise<CreditResult> {
   const batches = desktop ? Array.from({ length: Math.ceil(uids.length / 20) }, (_, i) => uids.slice(i * 20, i * 20 + 20)) : [uids]
   const okUIDs = new Set<string>()
+  const failureReasons = new Set<string>()
+  const failures: CreditFailure[] = []
   let failed = 0
   let confirmed = 0
   let issue: string | undefined
@@ -149,7 +152,11 @@ export async function queryAllCredits(
       const items = task.items ?? []
       for (const item of items) {
         if (item.ok) okUIDs.add(item.uid)
-        else failed++
+        else {
+          failed++
+          failures.push({ uid: item.uid, message: item.message || '上游未返回失败详情' })
+          if (failureReasons.size < 3) failureReasons.add(item.message || '上游未返回失败详情')
+        }
       }
       confirmed += items.length
       progress({ done: confirmed, total: uids.length, batch: index + 1, batches: batches.length })
@@ -172,7 +179,7 @@ export async function queryAllCredits(
     }
     if (issue) break
   }
-  return { okUIDs, failed, confirmed, issue, batches: batches.length }
+  return { failures, okUIDs, failed, confirmed, issue, batches: batches.length, failureReasons: [...failureReasons] }
 }
 
 export default function Dashboard({ onStartGuide, guideOpen = false }: { onStartGuide?: () => void; guideOpen?: boolean }) {
@@ -188,6 +195,7 @@ export default function Dashboard({ onStartGuide, guideOpen = false }: { onStart
   const mounted = useRef(true)
   const [creditBusy, setCreditBusy] = useState(false)
   const [creditProgress, setCreditProgress] = useState<CreditProgress | null>(null)
+  const [creditFailures, setCreditFailures] = useState<(CreditFailure & { name: string })[]>([])
   const [creditOutcome, setCreditOutcome] = useState<CreditOutcome | null>(null)
   const [creditNotice, setCreditNotice] = useState<{ kind: 'ok' | 'warn' | 'error'; text: string } | null>(null)
   const desktop = hasDesktopBridge()
@@ -268,6 +276,7 @@ export default function Dashboard({ onStartGuide, guideOpen = false }: { onStart
     setCreditBusy(true)
     setCreditProgress(null)
     setCreditOutcome(null)
+    setCreditFailures([])
     pendingCreditOutcome.current = null
     setCreditNotice(null)
     try {
@@ -282,6 +291,7 @@ export default function Dashboard({ onStartGuide, guideOpen = false }: { onStart
       }
       const result = await queryAllCredits(uids, desktop, run, value => { if (mounted.current && !run.cancelled) setCreditProgress(value) })
       if (!mounted.current) return
+      setCreditFailures(result.failures.map(item => ({ ...item, name: all.find(a => a.uid === item.uid) ? displayName(all.find(a => a.uid === item.uid)!) : item.uid })))
       if (run.cancelled) {
         setCreditNotice({ kind: 'warn', text: '积分查询已取消；已完成的账号结果会随仪表盘刷新' })
         return
@@ -289,7 +299,7 @@ export default function Dashboard({ onStartGuide, guideOpen = false }: { onStart
       pendingCreditOutcome.current = { ...result, total: all.length, target: uids.length, skipped }
       const unconfirmed = uids.length - result.confirmed
       const detail = `已完成 ${result.confirmed}/${uids.length}，成功 ${result.okUIDs.size}，失败 ${result.failed}${unconfirmed ? `，未确认 ${unconfirmed}` : ''}${skipped ? `，无凭证 ${skipped}` : ''}（${result.batches} 批）`
-      setCreditNotice({ kind: result.issue ? 'error' : result.failed || unconfirmed || skipped ? 'warn' : 'ok', text: `积分查询${result.issue ? `中断：${result.issue}；` : '完成：'}${detail}。正在刷新仪表盘` })
+      setCreditNotice({ kind: result.issue ? 'error' : result.failed || unconfirmed || skipped ? 'warn' : 'ok', text: `积分查询${result.issue ? `中断：${result.issue}；` : '完成：'}${detail}${result.failureReasons.length ? `。失败原因：${result.failureReasons.join('；')}` : ''}。正在刷新仪表盘` })
     } catch (error) {
       if (mounted.current && !run.cancelled) setCreditNotice({ kind: 'error', text: error instanceof Error ? error.message : '查询积分失败' })
     } finally {
@@ -304,6 +314,8 @@ export default function Dashboard({ onStartGuide, guideOpen = false }: { onStart
   }
 
   const problems = problemAccounts(accounts)
+  const creditRejected = accounts.filter(a => a.credits_status === 'auth_rejected').length
+  const creditChecked = accounts.filter(a => a.credits_status === 'ok').length
   const topAccounts = [...accounts]
     .sort((a, b) => desktop ? (observedCredits(b) ?? -Infinity) - (observedCredits(a) ?? -Infinity) : (b.live_credits ?? b.credits) - (a.live_credits ?? a.credits))
     .slice(0, 6)
@@ -368,6 +380,23 @@ export default function Dashboard({ onStartGuide, guideOpen = false }: { onStart
       {error && <Alert kind="error">{error}</Alert>}
       {copyNotice && <Alert kind="info" onClose={() => setCopyNotice(null)}>{copyNotice}</Alert>}
       {creditNotice && <Alert kind={creditNotice.kind} onClose={() => setCreditNotice(null)}>{creditNotice.text}</Alert>}
+      {creditFailures.length > 0 && (
+        <section className="card" aria-label="积分查询失败账号">
+          <div className="card-head"><h2>本次积分查询失败的账号</h2><span className="hint">{creditFailures.length} 个</span></div>
+          <div className="table-wrap" style={{ maxHeight: 280, overflowY: 'auto' }}>
+            <table>
+              <thead><tr><th>账号</th><th>失败原因</th></tr></thead>
+              <tbody>{creditFailures.map(item => (
+                <tr key={item.uid}>
+                  <td><div>{item.name}</div><div className="mono text-faint" style={{ fontSize: 11 }}>{item.uid}</div></td>
+                  <td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{item.message}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+          <p className="hint">仅列出本次已确认失败的账号；取消或中断时未返回结果的账号不计为失败。下次查询时清空此列表。</p>
+        </section>
+      )}
       {ov && !ov.gateway_ok && (
         <Alert kind="error">
           <strong>无法连接网关（{ov.gateway_url}）</strong>
@@ -415,8 +444,8 @@ export default function Dashboard({ onStartGuide, guideOpen = false }: { onStart
             <Stat
               to="/accounts?status=healthy" label="网关账号池"
               value={`${ov.healthy}/${ov.total}`}
-              sub={ov.total === 0 ? '尚未添加任何账号' : `可用 / 总数`}
-              tone={ov.healthy === 0 ? 'danger' : ov.healthy < ov.total ? 'warn' : 'ok'}
+              sub={ov.total === 0 ? '尚未添加任何账号' : `候选 / 已载入；${creditRejected ? `积分认证失败 ${creditRejected} 个` : '不代表上游认证通过'}`}
+              tone={ov.healthy === 0 ? 'danger' : creditRejected || ov.healthy < ov.total ? 'warn' : undefined}
             />
             <Stat
               label="剩余积分"
@@ -436,8 +465,8 @@ export default function Dashboard({ onStartGuide, guideOpen = false }: { onStart
             <Stat
               label="凭证文件"
               value={String(ov.file_count)}
-              sub={ov.expired > 0 ? `${ov.expired} 个已过期` : '全部有效'}
-              tone={ov.expired > 0 ? 'warn' : undefined}
+              sub={creditRejected ? `积分认证失败 ${creditRejected} 个` : ov.expired > 0 ? `${ov.expired} 个本地时间已过期` : `本地时间未过期；积分已验证 ${creditChecked} 个`}
+              tone={creditRejected || ov.expired ? 'danger' : creditChecked < ov.file_count ? 'warn' : 'ok'}
             />
           </div>
 
@@ -482,6 +511,7 @@ export default function Dashboard({ onStartGuide, guideOpen = false }: { onStart
                             </td>
                             <td>
                               <Badge cls={b.cls}>{b.text}</Badge>
+                              <div style={{ marginTop: 4 }} title={a.credits_error}><Badge cls={creditStatusBadge(a.credits_status).cls}>{creditStatusBadge(a.credits_status).text}</Badge></div>
                             </td>
                             <td className="num">{desktop ? (observedCredits(a) === undefined ? '未知' : fmtNum(observedCredits(a))) : fmtNum(a.live_credits ?? a.credits)}</td>
                             <td className="num text-dim">{fmtNum(a.success_count)}</td>
@@ -500,7 +530,7 @@ export default function Dashboard({ onStartGuide, guideOpen = false }: { onStart
                 <span className="hint">{problems.length} 个</span>
               </div>
               {problems.length === 0 ? (
-                <div className="empty">所有账号状态正常</div>
+                <div className="empty">未发现已记录的问题；未查询的积分认证仍待验证</div>
               ) : (
                 <div className="table-wrap">
                   <table>
@@ -524,6 +554,7 @@ export default function Dashboard({ onStartGuide, guideOpen = false }: { onStart
                             </td>
                             <td>
                               <Badge cls={b.cls}>{b.text}</Badge>
+                              <div style={{ marginTop: 4 }} title={a.credits_error}><Badge cls={creditStatusBadge(a.credits_status).cls}>{creditStatusBadge(a.credits_status).text}</Badge></div>
                               {a.reason && (
                                 <div className="text-faint" style={{ fontSize: 11.5, marginTop: 3 }}>
                                   {a.reason}
@@ -536,7 +567,7 @@ export default function Dashboard({ onStartGuide, guideOpen = false }: { onStart
                               )}
                             </td>
                             <td className="text-dim" style={{ fontSize: 12 }}>
-                              {a.cool_remaining_sec ? fmtDuration(a.cool_remaining_sec) : fmtISO(a.last_err)}
+                              {a.cool_remaining_sec ? fmtDuration(a.cool_remaining_sec) : fmtISO(a.credits_error ? a.credits_at : a.last_err)}
                             </td>
                           </tr>
                         )

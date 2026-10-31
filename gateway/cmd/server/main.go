@@ -22,6 +22,7 @@ import (
 
 	"workbuddy2api/internal/auth"
 	"workbuddy2api/internal/pool"
+	"workbuddy2api/internal/privatefs"
 	"workbuddy2api/internal/redisstore"
 	"workbuddy2api/internal/scheduler"
 	"workbuddy2api/internal/server"
@@ -67,6 +68,12 @@ func main() {
 			_, _ = io.Copy(io.Discard, os.Stdin)
 			stop() // Private parent pipe EOF also cancels the normal shutdown path.
 		}()
+		if err := privatefs.CheckPrivateACL(filepath.Dir(*cfgPath)); err != nil {
+			log.Fatalf("desktop data directory is not private: %v", err)
+		}
+		if err := privatefs.CheckPrivateACL(*cfgPath); err != nil {
+			log.Fatalf("desktop config is not private: %v", err)
+		}
 	}
 
 	cfg, err := Load(*cfgPath)
@@ -88,6 +95,15 @@ func main() {
 		desktopLAN, err = desktopListenMode(cfg.Listen)
 		if err != nil {
 			log.Fatal(err)
+		}
+		if err := privatefs.EnsurePrivateDir(cfg.AuthDir); err != nil {
+			log.Fatalf("desktop account directory is not private: %v", err)
+		}
+		if err := privatefs.EnsurePrivateDir(filepath.Dir(cfg.StateFile)); err != nil {
+			log.Fatalf("desktop state directory is not private: %v", err)
+		}
+		if err := privatefs.CheckPrivateACL(cfg.StateFile); err != nil && !os.IsNotExist(err) {
+			log.Fatalf("desktop state file is not private: %v", err)
 		}
 	}
 	if ctx.Err() != nil {
@@ -114,6 +130,7 @@ func main() {
 
 	stopTokenHistory := server.StartTokenHistory(cfg.StateFile)
 	defer stopTokenHistory()
+	server.StartRateEventLog(cfg.StateFile) // 429 原文事件：state.json 同目录 ratelimit-events.jsonl
 	p := pool.New(cfg.StateFile)
 	defer p.Close() // 进程退出前停后台落盘 goroutine + 最后补一次落盘（FIX-4:goroutine 泄漏）
 	p.SetStore(store)

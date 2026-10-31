@@ -239,7 +239,18 @@ func (c *Client) privateError(err error) error {
 	}
 	var upstreamErr *Error
 	if errors.As(err, &upstreamErr) {
-		return &Error{Kind: upstreamErr.Kind, Status: upstreamErr.Status, Msg: "上游请求失败"}
+		message := "上游请求失败"
+		switch upstreamErr.Status {
+		case http.StatusUnauthorized:
+			message = "积分接口拒绝此账号凭证；请重新授权该账号，余额未知，不代表积分为零或聊天不可用"
+		case http.StatusForbidden:
+			message = "上游拒绝访问；请检查账号权限，勿反复批量重试"
+		case http.StatusNotFound:
+			message = "上游接口不存在；可能需要更新接口适配"
+		case http.StatusTooManyRequests:
+			message = "上游查询限流；请稍后重试"
+		}
+		return &Error{Kind: upstreamErr.Kind, Status: upstreamErr.Status, Msg: message}
 	}
 	return fmt.Errorf("上游请求失败")
 }

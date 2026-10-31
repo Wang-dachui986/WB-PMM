@@ -25,7 +25,7 @@ import SettingsPage, { type Preferences } from './pages/SettingsPage'
  *
  * 原实现用 emoji 当图标。emoji 来自不同字族，字重、视觉尺寸、基线各不相同，
  * 放在侧栏里参差不齐；而且彩色 emoji 会跟系统强调色的选中态打架。
- * macOS 系统应用的侧栏一律是统一的单色线性符号，这里照此对齐。
+ * 桌面应用侧栏采用统一的单色线性符号，这里照此对齐。
  */
 const ICONS: Record<string, ReactNode> = {
   // 仪表盘：速度表
@@ -121,6 +121,9 @@ const NAV_GROUPS: { id: string; title: string; items: NavItem[] }[] = [
 const isGatewayRunning = (status: Record<string, unknown>) =>
   status.gateway_state === 'running_ready' || status.gateway_state === 'running_unavailable'
 
+// WebView2 remains a desktop surface even if native bridge injection failed.
+const isDesktopPanel = () => hasDesktopBridge() || !!(window as Window & { chrome?: { webview?: unknown } }).chrome?.webview
+
 export default function App() {
   const [session, setSession] = useState<SessionInfo | null>(null)
   const [loading, setLoading] = useState(true)
@@ -128,8 +131,15 @@ export default function App() {
   const navigate = useNavigate()
 
   const refreshSession = useCallback(async () => {
+    setLoading(true)
     try {
-      let s = await api.session()
+      let s: SessionInfo
+      try { s = await api.session() }
+      catch (error) {
+        if (!hasDesktopBridge()) throw error
+        await reconnectDesktop()
+        s = await api.session()
+      }
       if (!s.authenticated && hasDesktopBridge()) {
         await reconnectDesktop()
         s = await api.session()
@@ -153,7 +163,7 @@ export default function App() {
   useEffect(() => {
     setUnauthorizedHandler(() => {
       setSession((prev) => (prev ? { ...prev, authenticated: false } : prev))
-      setBanner('会话已过期，请重新登录')
+      setBanner(isDesktopPanel() ? '管理连接已失效，请重试连接' : '会话已过期，请重新登录')
       navigate('/')
     })
   }, [navigate])
@@ -172,6 +182,16 @@ export default function App() {
   }
 
   if (!session?.authenticated) {
+    if (isDesktopPanel()) return (
+      <div className="login-wrap">
+        <section className="card" role="status" style={{ maxWidth: 420 }}>
+          <h1>连接 WB-PMM 控制台</h1>
+          <p>{banner || '本机管理连接尚未就绪，无需输入用户名或密码。'}</p>
+          <button className="btn btn-primary" onClick={() => { void refreshSession() }}>重试连接</button>
+          {!hasDesktopBridge() && <p className="hint">桌面连接组件未就绪，请使用窗口上方的重试连接或重新打开应用。</p>}
+        </section>
+      </div>
+    )
     return <Login info={session} banner={banner} onCloseBanner={() => setBanner(null)} onSuccess={refreshSession} />
   }
 
@@ -359,14 +379,14 @@ function Shell({
         <div className="nav-spacer" />
         <div className="nav-foot">
           <div style={{ marginBottom: 8, wordBreak: 'break-all' }}>网关：{hasDesktopBridge() ? String(nativeStatus.api_base_url ?? '等待本机状态') : session.gateway_url}</div>
-          <div style={{ marginBottom: 8 }}>
+          {!isDesktopPanel() && <div style={{ marginBottom: 8 }}>
             <span className="text-faint">登录身份：</span>
             {session.username}
             {session.read_only && <span className="badge badge-warn" style={{ marginLeft: 6 }}>只读</span>}
-          </div>
-          <button className="btn btn-sm" style={{ width: '100%' }} onClick={onLogout}>
+          </div>}
+          {!isDesktopPanel() && <button className="btn btn-sm" style={{ width: '100%' }} onClick={onLogout}>
             退出登录
-          </button>
+          </button>}
         </div>
       </aside>
 
@@ -434,7 +454,7 @@ function Shell({
         {firstRunStep === 6 && <><p>选择模型并复制完整模型 ID，保留 cn: 或 global: 前缀。填好地址、密钥与模型后，就可以在客户端使用。</p>
           <p className="hint">“聊天测试”中的真实请求可能消耗积分，需要你手动发送。</p>
           <label className="checkbox"><input type="checkbox" checked={firstRunAutoStart} onChange={event => setFirstRunAutoStart(event.target.checked)} />下次打开应用时启动 API</label>
-          <p className="hint">登录 macOS 后自动启动可在“应用设置”单独开启。</p>
+          <p className="hint">登录 Windows 后自动启动可在“应用设置”单独开启。</p>
           <div className="page-actions"><button className="btn" onClick={() => navigate('/playground')}>前往手动聊天测试</button>
             <button className="btn btn-primary" disabled={firstRunBusy} onClick={() => void finishFirstRun(false)}>完成首次设置</button></div></>}
         <div className="guide-footer">{firstRunStep > 0 && <button className="btn btn-ghost btn-sm" disabled={firstRunBusy} onClick={() => guideStep(firstRunStep - 1)}>上一步</button>}

@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-31",
+  "source": "Unified macos/windows with shared gateway/panel",
+  "current_checks": {
+    "gateway_go_test_all": "PASS",
+    "panel_go_test_all": "PASS",
+    "frontend_typecheck_and_build": "PASS",
+    "build_script_syntax_and_macos_version_consistency": "PASS",
+    "public_docs_relative_links": "PASS"
+  },
+  "previous_package_checks": {
+    "macos": {
+      "version": "1.0.11",
+      "build": 12,
+      "sha256": "651823babe7d4a3da7c47783513ad7ecf35b147bd6aca52d21a17471b5737ce1",
+      "change": "CN credential domains and UTF-8 BOM import compatibility",
+      "native_import_fixture": "PASS",
+      "go_authstore_ops": "PASS",
+      "native_build": "PASS",
+      "payload_hashes": "PASS",
+      "installer_scripts": "PASS",
+      "app_signature": "adhoc verified",
+      "pkg_signing": "unsigned",
+      "notarization": "NOT_DONE",
+      "install_runtime": "NOT_RUN"
+    },
+    "windows": {
+      "version": "1.0.16",
+      "sha256": "5a5db43376c712ca0334546a046f2757188ca1bf0a24ff572f366b8f13411b5e",
+      "change": "CN credential domains and UTF-8 BOM import compatibility",
+      "go_authstore_ops": "PASS",
+      "csharp_contract_and_real_go_import": "PASS (34 checks, synthetic files)",
+      "windows_compile": "PASS",
+      "nsis_compile": "PASS",
+      "file_picker_and_windows_runtime": "NOT_RUN",
+      "authenticode_verification": "NOT_RUN_ON_MAC"
+    }
+  },
+  "scope": "No real credentials or upstream model calls used in these source checks. No new real-system installer acceptance."
+}

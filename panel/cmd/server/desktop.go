@@ -34,6 +34,7 @@ import (
 	"workbuddy2api-gui/internal/api"
 	"workbuddy2api-gui/internal/authstore"
 	"workbuddy2api-gui/internal/config"
+	"workbuddy2api-gui/internal/fsutil"
 	"workbuddy2api-gui/internal/gateway"
 	"workbuddy2api-gui/internal/ops"
 	"workbuddy2api-gui/internal/upstream"
@@ -282,7 +283,7 @@ func buildDesktopHandler(cfg *config.Config, init *desktopInit) (http.Handler, e
 	if err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(store.Dir(), 0o700); err != nil {
+	if err := fsutil.EnsurePrivateDir(store.Dir()); err != nil {
 		return nil, err
 	}
 	gw := gateway.New(cfg.GatewayURL, func() string { return cfg.GatewayAPIKey }, cfg.Timeout())

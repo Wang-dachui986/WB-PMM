@@ -33,6 +33,6 @@ trap cleanup EXIT
 /bin/cp "$source_helper" "$scratch/installer-helper"
 /bin/chmod 755 "$scratch/installer-helper"
 if ! /bin/launchctl asuser "$console_uid" /usr/bin/sudo -n -H -u "$console_user" "$scratch/installer-helper" prepare; then
-  echo 'WB-PMM is still running. Choose Completely Quit from its menu-bar icon (Dock Quit only hides it), then retry. Installation stopped.' >&2
+  echo 'WB-PMM did not exit safely, or another user is still running it; installation stopped' >&2
   exit 1
 fi

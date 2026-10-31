@@ -69,6 +69,8 @@ type AccountView struct {
 
 	// 积分：GatewayCredits 来自 /status（分钟级刷新），LiveCredits 来自主动查询（更准）。
 	GatewayCredits int64      `json:"credits"`
+	CreditsStatus  string     `json:"credits_status,omitempty"` // ok | auth_rejected | failed; absent = not queried
+	CreditsError   string     `json:"credits_error,omitempty"`
 	LiveCredits    *int64     `json:"live_credits,omitempty"`
 	CreditsAt      *time.Time `json:"credits_at,omitempty"`
 }
@@ -128,6 +130,7 @@ type creditCache struct {
 	credits *upstream.Credits
 	at      time.Time
 	err     string
+	status  string
 }
 
 // Service 业务操作聚合入口。
@@ -274,14 +277,17 @@ func (s *Service) Accounts(ctx context.Context) ([]AccountView, *gateway.Status,
 		}
 	}
 
-	// 合并积分缓存。
+	// Query outcome is independent of gateway scheduling eligibility.
 	s.mu.RLock()
 	for uid, c := range s.credits {
-		if v, ok := byUID[uid]; ok && c.credits != nil {
-			remain := c.credits.Remain
+		if v, ok := byUID[uid]; ok {
 			at := c.at
-			v.LiveCredits = &remain
 			v.CreditsAt = &at
+			v.CreditsStatus, v.CreditsError = c.status, c.err
+			if c.credits != nil {
+				remain := c.credits.Remain
+				v.LiveCredits = &remain
+			}
 		}
 	}
 	s.mu.RUnlock()
@@ -368,7 +374,7 @@ func (s *Service) Overview(ctx context.Context) *Overview {
 		case a.LiveCredits != nil:
 			ov.Credits.Remain += *a.LiveCredits
 			ov.Credits.OK++
-		case a.InGateway:
+		case a.InGateway && a.CreditsError == "":
 			ov.Credits.Remain += a.GatewayCredits
 			ov.Credits.OK++
 		default:
@@ -552,14 +558,13 @@ func (s *Service) CreditsFor(ctx context.Context, uid string) (*upstream.Credits
 	}
 	if a.NeedsRefresh(10 * time.Minute) {
 		if err := s.refreshAccount(ctx, a); err != nil {
+			s.setCreditError(uid, err)
 			return nil, fmt.Errorf("刷新 token 失败: %w", err)
 		}
 	}
 	c, err := s.up.UserResourceContext(ctx, a)
 	if err != nil {
-		s.mu.Lock()
-		s.credits[uid] = creditCache{at: time.Now(), err: err.Error()}
-		s.mu.Unlock()
+		s.setCreditError(uid, err)
 		return nil, err
 	}
 	s.setCreditCache(uid, c)
@@ -603,6 +608,7 @@ func (s *Service) Profile(ctx context.Context, uid string, silent bool) (map[str
 		s.setCreditCache(uid, c)
 		out["credits"] = c
 	} else {
+		s.setCreditError(uid, err)
 		out["credits_error"] = err.Error()
 	}
 	if b, err := s.up.BuddyInfo(a); err == nil {
@@ -618,10 +624,25 @@ func (s *Service) Profile(ctx context.Context, uid string, silent bool) (map[str
 	return out, nil
 }
 
+// Failed queries invalidate old balances without disabling chat scheduling.
+func (s *Service) setCreditError(uid string, err error) {
+	if errors.Is(err, context.Canceled) {
+		return
+	}
+	status := "failed"
+	var upstreamErr *upstream.Error
+	if errors.As(err, &upstreamErr) && upstreamErr.Status == 401 {
+		status = "auth_rejected"
+	}
+	s.mu.Lock()
+	s.credits[uid] = creditCache{at: time.Now(), err: err.Error(), status: status}
+	s.mu.Unlock()
+}
+
 // setCreditCache 写入积分缓存。
 func (s *Service) setCreditCache(uid string, c *upstream.Credits) {
 	s.mu.Lock()
-	s.credits[uid] = creditCache{credits: c, at: time.Now()}
+	s.credits[uid] = creditCache{credits: c, at: time.Now(), status: "ok"}
 	s.mu.Unlock()
 }
 
@@ -822,6 +843,7 @@ func (s *Service) BatchCredits(ctx context.Context, uids []string) (*TaskView, e
 			if a.NeedsRefresh(10 * time.Minute) {
 				if err := s.refreshAccount(ctx, a); err != nil {
 					item.OK = false
+					s.setCreditError(a.UID, err)
 					item.Message = "刷新 token 失败: " + err.Error()
 					item.EndedAt = time.Now()
 					t.addItem(item)
@@ -831,6 +853,7 @@ func (s *Service) BatchCredits(ctx context.Context, uids []string) (*TaskView, e
 			c, err := s.up.UserResourceContext(ctx, a)
 			if err != nil {
 				item.OK = false
+				s.setCreditError(a.UID, err)
 				item.Message = err.Error()
 			} else {
 				s.setCreditCache(a.UID, c)

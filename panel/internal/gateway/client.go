@@ -191,8 +191,13 @@ func (c *Client) Status(ctx context.Context) (*Status, error) {
 }
 
 // Models 拉取模型列表（可能触发网关向上游拉取，耗时较长）。
-func (c *Client) Models(ctx context.Context) ([]Model, error) {
-	resp, err := c.do(ctx, http.MethodGet, "/v1/models", nil)
+// refresh=true 时带 ?refresh=1，令网关跳过模型缓存立即向上游重拉。
+func (c *Client) Models(ctx context.Context, refresh bool) ([]Model, error) {
+	path := "/v1/models"
+	if refresh {
+		path += "?refresh=1"
+	}
+	resp, err := c.do(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
 	}

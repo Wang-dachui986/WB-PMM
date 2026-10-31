@@ -9,8 +9,8 @@ const require=createRequire(import.meta.url)
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright')
 const {outputFiles}=await build({stdin:{contents:`import React from 'react'; import {createRoot} from 'react-dom/client'; import {HashRouter,Routes,Route} from 'react-router-dom'; import Accounts from './src/pages/Accounts'; import LoginWizard from './src/pages/LoginWizard'; import * as bridge from './src/desktopBridge'; import {api} from './src/api'; window.m04={...bridge,api}; const session={read_only:false,dangerous_ops:true}; createRoot(document.getElementById('root')).render(<HashRouter><Routes><Route path='/accounts' element={<Accounts session={session}/>} /><Route path='/login' element={<LoginWizard session={session} onDone={async()=>{window.done=(window.done||0)+1;return null}}/>}/></Routes></HashRouter>);`,loader:'tsx',resolveDir:fileURLToPath(new URL('../',import.meta.url))},bundle:true,write:false,format:'iife',jsx:'automatic',plugins:process.env.M04_ACCOUNTS_BASELINE?[{name:'accounts-baseline',setup(builder){builder.onLoad({filter:/[/\\]pages[/\\]Accounts\.tsx$/},async args=>({contents:await readFile(process.env.M04_ACCOUNTS_BASELINE,'utf8'),loader:'tsx',resolveDir:fileURLToPath(new URL('../src/pages',import.meta.url))}))}}]:[]})
 const requests=[]
-const heldAccounts=[],heldBatch=[]
-let holdNextAccounts=false,holdNextBatch=false
+const heldAccounts=[],heldBatch=[],heldLoginStarts=[]
+let holdNextAccounts=false,holdNextBatch=false,holdNextLoginStart=false
 let pollMode='pending',confirmed=false,pollActive=0,pollMax=0,taskRunning=true
 const login=()=>({id:'a'.repeat(32),region:'cn',status:pollMode==='pending'?'pending':'success',saved:confirmed,uid:'fake001',message:'synthetic',requires_overwrite_confirmation:pollMode==='overwrite'&&!confirmed,save_error_code:pollMode==='save_failure'?'CREDENTIAL_DOMAIN_UNSUPPORTED':''})
 const presentation=process.argv.includes('--presentation-only')
@@ -28,7 +28,7 @@ const server=http.createServer(async(req,res)=>{
  const send=value=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(value))}
  if(req.url==='/api/accounts'){if(holdNextAccounts){holdNextAccounts=false;heldAccounts.push(send);return}send({accounts:presentation?presentationAccounts:[account],gateway_ok:true});return}
  if(req.url==='/api/accounts/fake001'||req.url==='/api/accounts/fake001?silent=true'){send({account:{...presentationAccounts[0],status:'unknown',success_count:0,err_total:0,in_flight:0},credits:{remain:0,used:9,size:9,packages:1}});return}
- if(req.url==='/api/login/start'){send(login());return}
+ if(req.url==='/api/login/start'){if(holdNextLoginStart){holdNextLoginStart=false;heldLoginStarts.push(send);return}send(login());return}
  if(req.url.endsWith('/confirm-overwrite')){confirmed=true;send(login());return}
  if(req.url.endsWith('/cancel')){send({...login(),status:'cancelled'});return}
  if(req.url.endsWith('/poll')){pollActive++;pollMax=Math.max(pollMax,pollActive);await new Promise(resolve=>setTimeout(resolve,100));pollActive--;send(login());return}
@@ -40,7 +40,7 @@ const server=http.createServer(async(req,res)=>{
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve))
 let browser
 try{
- browser=await chromium.launch({headless:true});const page=await browser.newPage()
+ browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE}:{})});const page=await browser.newPage()
  const errors=[];page.on('pageerror',error=>errors.push(error.message))
  const origin=`http://127.0.0.1:${server.address().port}`
  await page.route('**/*',route=>route.request().url().startsWith(origin+'/')?route.continue():route.abort())
@@ -62,6 +62,9 @@ try{
     const lease={instance_id:'fake-instance',generation:String(++window.generation),action:body.payload.action==='reauthorize'?'login':body.payload.action,uids:body.payload.uids,expires_at:'2099-01-01T00:00:00Z'}
     if(window.mode==='hold_begin'||window.forceTimeout){window.held.push({body,data:lease});return}
     queueMicrotask(()=>window.respond(body,lease));return
+   }
+   if(body.action==='auth.openBrowser'&&window.mode==='fail_open'){
+    queueMicrotask(()=>window.__workbuddyBridgeReceive({id:body.id,ok:false,error:{code:'operation_failed',message:'模拟浏览器不可用'}}));return
    }
    if(body.action==='files.importAuth'&&body.payload.operation==='preview'){
     const data={preview_id:'00000000-0000-0000-0000-000000000001',uid:'fake001',region:'cn',expires_at:1999999999,overwrite_required:true}
@@ -100,12 +103,23 @@ try{
   await page.getByRole('button',{name:'Synthetic',exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Updated note',exact:true}).count(),0);assert.equal(await page.evaluate(()=>window.notes.fake001),undefined);
   assert.equal(requests.filter(r=>/credits|travel|poll|refresh/.test(r.path)).length,0);console.log('PASS PRESENTATION successful delete clears visible note cache; details never query provider');
  } else {
- await page.goto(origin+'/#/login');await page.reload();await page.getByRole('button',{name:/发起授权/}).click()
+ const waitServer=async predicate=>{for(let i=0;i<200;i++){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,10))}throw Error('held request not reached')}
+ await page.goto(origin+'/#/login');await page.reload();await page.evaluate(()=>window.mode='fail_open')
+ const pendingPoll=page.waitForResponse(response=>response.url().endsWith('/poll'))
+ await page.getByRole('button',{name:/发起授权/}).click()
  await page.getByRole('button',{name:'打开授权页面',exact:true}).waitFor()
  assert.equal(await count('begin'),1)
  assert.ok((await page.evaluate(()=>window.timeouts)).includes(1050000),'maintenance uses bounded action deadline')
+ await page.waitForFunction(()=>window.nativeCalls.filter(x=>x.action==='auth.openBrowser').length===1)
+ await page.getByText(/未能自动打开浏览器.*请点击“打开授权页面”重试/).waitFor()
+ await pendingPoll
+ assert.equal(await page.getByText(/未能自动打开浏览器/).count(),1,'polling preserves browser retry guidance')
+ assert.equal(await count('end'),0,'browser launch failure keeps maintenance lease')
+ await page.evaluate(()=>window.mode='normal')
  await page.getByRole('button',{name:'打开授权页面',exact:true}).click()
- assert.deepEqual((await calls()).find(x=>x.action==='auth.openBrowser').payload,{session_id:'a'.repeat(32)})
+ await page.waitForFunction(()=>window.nativeCalls.filter(x=>x.action==='auth.openBrowser').length===2)
+ assert.deepEqual((await calls()).filter(x=>x.action==='auth.openBrowser').map(x=>x.payload),[{session_id:'a'.repeat(32)},{session_id:'a'.repeat(32)}])
+ await page.getByText(/未能自动打开浏览器/).waitFor({state:'hidden'})
  pollMode='overwrite'
  await page.getByRole('button',{name:'立即检查',exact:true}).click();await page.getByRole('button',{name:'立即检查',exact:true}).click()
  await page.getByRole('button',{name:'确认覆盖同一账号',exact:true}).waitFor()
@@ -116,22 +130,29 @@ try{
  const writes=requests.filter(x=>x.path.startsWith('/api/login/'))
  assert.ok(writes.every(x=>x.headers['x-workbuddy-panel-instance']==='fake-instance'&&x.headers['x-workbuddy-maintenance-generation']==='1'))
  assert.equal(writes.filter(x=>x.path==='/api/login/start').length,1,'save retry reuses session')
-  console.log('PASS M04 React lease headers, private browser action, singleflight login, saved=false overwrite retry')
+  console.log('PASS M04 React auto browser once, manual retry after failure, lease headers, singleflight login and overwrite retry')
   pollMode='pending';confirmed=false
   await page.goto(origin+'/#/login');await page.reload();await page.getByRole('button',{name:/发起授权/}).click();await page.getByRole('button',{name:'打开授权页面',exact:true}).waitFor()
   pollMode='save_failure';await page.getByRole('button',{name:'立即检查',exact:true}).click();await page.getByText(/凭证区域暂不受支持/).waitFor()
   assert.equal(await count('end'),0,'save failure retains the same lease');await page.getByRole('button',{name:'取消',exact:true}).click()
   console.log('PASS M04 React safe save code is visible while the unsaved session stays open')
   // An unmounted SPA flow cancels its precise begin ID even before a lease arrives.
- pollMode='pending';confirmed=false
- await page.goto(origin+'/#/login');await page.reload();await page.evaluate(()=>window.mode='hold_begin')
+  pollMode='pending';confirmed=false
+  await page.goto(origin+'/#/login');await page.reload();await page.evaluate(()=>window.mode='hold_begin')
  const starts=requests.filter(x=>x.path==='/api/login/start').length
  await page.getByRole('button',{name:/发起授权/}).click();await waitCall('begin')
  await page.getByRole('link',{name:'← 返回账号管理',exact:true}).click();await waitCall('cancel_pending')
  let all=await calls();assert.equal(all.find(x=>x.payload.operation==='cancel_pending').payload.request_id,all.find(x=>x.payload.operation==='begin').id)
  await page.evaluate(()=>{for(const held of window.held.splice(0))window.respond(held.body,held.data)})
  await settle();assert.equal(requests.filter(x=>x.path==='/api/login/start').length,starts)
+ assert.equal((await calls()).filter(x=>x.action==='auth.openBrowser').length,0,'unmount before lease cannot open browser')
  console.log('PASS M04 React unmount before begin reply cancels exact request and prevents login start')
+ await page.goto(origin+'/#/login');await page.reload();holdNextLoginStart=true
+ await page.getByRole('button',{name:/发起授权/}).click();await waitServer(()=>heldLoginStarts.length===1)
+ await page.getByRole('button',{name:'取消等待',exact:true}).click();await waitCall('cancel_pending')
+ heldLoginStarts.shift()(login());await settle()
+ assert.equal((await calls()).filter(x=>x.action==='auth.openBrowser').length,0,'cancel while loginStart is pending cannot open browser')
+ console.log('PASS M04 React cancelled login start never opens browser')
  await page.goto(origin+'/#/login');await page.reload();await page.getByRole('button',{name:/发起授权/}).click();await page.getByRole('button',{name:'打开授权页面',exact:true}).waitFor()
  await page.getByRole('link',{name:'← 返回账号管理',exact:true}).click();await waitCall('cancel_pending')
  assert.ok(requests.some(x=>x.path.endsWith('/cancel')))
@@ -149,10 +170,9 @@ try{
  assert.ok(requests.find(x=>x.path==='/api/tasks/refresh').headers['x-workbuddy-maintenance-generation'])
  console.log('PASS M04 React batch completion retains lease through end acknowledgement')
  // R2 P1: A's continuation must never clean up or overwrite the next flow B.
- const waitServer=async predicate=>{for(let i=0;i<200;i++){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,10))}throw Error('held request not reached')}
  const freshAccounts=async()=>{taskRunning=true;await page.goto(origin+'/#/accounts');await page.reload();await page.getByText('Synthetic',{exact:true}).first().waitFor();await page.locator('thead input[type=checkbox]').check()}
  const cancelA=async()=>{await page.getByRole('button',{name:'取消维护',exact:true}).click();await page.waitForFunction(()=>!Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='批量刷新 Token').disabled)}
- const startB=async()=>{await page.getByRole('button',{name:'批量刷新 Token',exact:true}).click();await page.getByText('Synthetic batch',{exact:true}).waitFor();return (await calls()).filter(x=>x.payload.operation==='begin').at(-1)}
+ const startB=async()=>{await page.locator('thead input[type=checkbox]').check();await page.getByRole('button',{name:'批量刷新 Token',exact:true}).click();await page.getByText('Synthetic batch',{exact:true}).waitFor();return (await calls()).filter(x=>x.payload.operation==='begin').at(-1)}
  const assertBActive=async begin=>{
   const history=await calls()
   assert.equal(history.filter(x=>x.action==='account.maintenance'&&((x.payload.operation==='end'&&x.payload.generation==='2')||(x.payload.operation==='cancel_pending'&&x.payload.request_id===begin.id))).length,0,'old A must not end/cancel B')

@@ -333,7 +333,8 @@ func desktopStorageError(err error) error {
 
 func privateDir(path string) error {
 	info, err := os.Lstat(path)
-	if err != nil || !info.IsDir() || info.Mode().Perm() != 0o700 {
+	if err != nil || !info.IsDir() || fsutil.PermBitsEnforced() && info.Mode().Perm() != 0o700 ||
+		fsutil.CheckPrivateACL(path) != nil {
 		return ErrDesktopConfigStorage
 	}
 	return nil
@@ -344,7 +345,7 @@ func readPrivateConfig(path string) ([]byte, error) {
 		return nil, err
 	}
 	before, err := os.Lstat(path)
-	if err != nil || !before.Mode().IsRegular() || before.Mode().Perm() != 0o600 {
+	if err != nil || !before.Mode().IsRegular() || fsutil.PermBitsEnforced() && before.Mode().Perm() != 0o600 {
 		return nil, ErrDesktopConfigStorage
 	}
 	raw, err := fsutil.ReadFileStrict(path, desktopConfigByteLimit)
@@ -352,7 +353,7 @@ func readPrivateConfig(path string) ([]byte, error) {
 		return nil, desktopStorageError(err)
 	}
 	after, err := os.Lstat(path)
-	if err != nil || !os.SameFile(before, after) || after.Mode().Perm() != 0o600 {
+	if err != nil || !os.SameFile(before, after) || fsutil.PermBitsEnforced() && after.Mode().Perm() != 0o600 {
 		return nil, ErrDesktopConfigStorage
 	}
 	return raw, nil
@@ -772,7 +773,7 @@ func (s *DesktopConfigStore) reserveBackup(ctx context.Context, id string, raw [
 	if err := privateDir(filepath.Dir(s.backupDir)); err != nil {
 		return err
 	}
-	if err := os.Mkdir(s.backupDir, 0o700); err != nil && !os.IsExist(err) {
+	if err := fsutil.EnsurePrivateDir(s.backupDir); err != nil {
 		return ErrDesktopConfigStorage
 	}
 	if err := privateDir(s.backupDir); err != nil {
@@ -790,7 +791,8 @@ func (s *DesktopConfigStore) reserveBackup(ctx context.Context, id string, raw [
 			continue
 		} // Never prune account files or other applications' files.
 		info, err := entry.Info()
-		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 {
+		if err != nil || !info.Mode().IsRegular() || fsutil.PermBitsEnforced() && info.Mode().Perm() != 0o600 ||
+			fsutil.CheckPrivateACL(s.backupPath(backupID)) != nil {
 			return ErrDesktopConfigStorage
 		}
 		if info.Size() > desktopConfigByteLimit {

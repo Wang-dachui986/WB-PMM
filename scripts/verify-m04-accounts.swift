@@ -56,6 +56,13 @@ import Darwin
         let flat = AppPaths.dataDirectory.appendingPathComponent("flat.json")
         try JSONSerialization.data(withJSONObject: ["uid":"fake001","accessToken":"SYNTHETIC_ONLY","domain":"www.workbuddy.ai"]).write(to: flat)
         check(try NativeAuthImport.read(flat).region == "global", "flat schema supported")
+        for domain in ["codebuddy.cn","www.codebuddy.cn"] {
+            let cn = AppPaths.dataDirectory.appendingPathComponent("bom-cn.json")
+            let body = try JSONSerialization.data(withJSONObject: ["account":["uid":"fake001"],"auth":["accessToken":"SYNTHETIC_ONLY","domain":domain]])
+            try (Data([0xEF,0xBB,0xBF]) + body).write(to: cn)
+            let value = try NativeAuthImport.read(cn)
+            check(value.uid == "fake001" && value.region == "cn" && !value.raw.starts(with:[0xEF,0xBB,0xBF]), "CN alias UTF-8 BOM parses and normalizes before import")
+        }
         let oversized = AppPaths.dataDirectory.appendingPathComponent("large.json")
         try Data(repeating: 32, count: (1 << 20) + 1).write(to: oversized)
         await rejected("over 1 MiB rejected") { _ = try NativeAuthImport.read(oversized) }
@@ -81,7 +88,7 @@ import Darwin
         await rejected("expired preview is unusable") { _ = try await services.performMaintenance(.importConfirm(previewID:preview["preview_id"] as! String,overwrite:false,requestID:"confirm"),owner:owner) }
         try fixture(["existing_domain":"www.workbuddy.ai"])
         await rejected("cross-region preview refused") { _ = try await services.performMaintenance(.importPreview(requestID:"cross"),owner:owner) }
-        try fixture(["existing_domain":"copilot.tencent.com"])
+        try fixture(["existing_domain":"www.codebuddy.cn"])
         preview = try await services.performMaintenance(.importPreview(requestID:"overwrite"),owner:owner)
         check(preview["overwrite_required"] as? Bool == true, "same-region overwrite disclosed")
         await rejected("overwrite requires explicit confirmation") { _ = try await services.performMaintenance(.importConfirm(previewID:preview["preview_id"] as! String,overwrite:false,requestID:"confirm"),owner:owner) }
@@ -137,6 +144,14 @@ import Darwin
         _ = try await services.performMaintenance(.delete(uid:"fake001"),owner:owner)
         check(settings.accountNotes["fake001"]==nil, "successful fixed delete clears only selected note")
         try await end(deletion)
+        let batchDeletion=try await begin("delete",uids:["fake001","fake002"])
+        await rejected("batch delete rejects an unselected UID") { _ = try await services.performMaintenance(.delete(uid:"fake003"),owner:owner) }
+        _ = try await services.performMaintenance(.delete(uid:"fake002"),owner:owner)
+        try await end(batchDeletion)
+        let batchUIDs=(0..<100).map { "fake-\($0)" }
+        check(NativeBridge.maintenanceRequest(["operation":"begin","action":"delete","uids":batchUIDs]) != nil,"batch delete accepts 100 explicit UIDs")
+        check(NativeBridge.maintenanceRequest(["operation":"begin","action":"delete","uids":batchUIDs+["extra-uid"]]) == nil,"batch delete refuses over 100 UIDs")
+        check(NativeBridge.maintenanceRequest(["operation":"begin","action":"delete","uids":[]]) == nil,"batch delete refuses empty selection")
         check(await services.startGateway(), "owned fake gateway starts")
         _ = try await services.performMaintenance(.setEnabled(uid:"fake001",enabled:false),owner:owner)
         _ = try await services.performMaintenance(.setEnabled(uid:"fake001",enabled:true),owner:owner)

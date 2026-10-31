@@ -117,7 +117,7 @@ export const api = {
   deleteAccount: async (uid: string, lease?: MaintenanceLease): Promise<{ ok: boolean; message: string }> => {
     const headers = leaseHeaders(lease)
     if (hasDesktopBridge()) {
-      if (lease?.action !== 'delete' || lease.uids.length !== 1 || lease.uids[0] !== uid) throw new Error('删除许可与账号不匹配')
+      if (lease?.action !== 'delete' || !lease.uids.includes(uid)) throw new Error('删除许可与账号不匹配')
       return await desktopCommand('account.delete', { uid }) as { ok: boolean; message: string }
     }
     return del(`/api/accounts/${encodeURIComponent(uid)}?confirm=${encodeURIComponent(uid)}`, headers)
@@ -146,7 +146,8 @@ export const api = {
   loginConfirmOverwrite: (id: string, uid: string, lease?: MaintenanceLease) => post<LoginSession>(`/api/login/${encodeURIComponent(id)}/confirm-overwrite`, { uid }, leaseHeaders(lease)),
 
   // 模型 / 聊天
-  models: () => get<ModelsResponse>('/api/models'),
+  // refresh=true：网关跳过模型缓存，立即向上游重拉（新上架模型无需等 1 小时或重启）
+  models: (refresh = false) => get<ModelsResponse>(refresh ? '/api/models?refresh=1' : '/api/models'),
   // 请求统计（按模型聚合 + 时间维度）+ 官方价换算
   tokenHistory: (from: string, to: string) => get<import('./pages/tokenData').TokenHistory>(`/api/token-history?${new URLSearchParams({ from, to })}`),
   stats: (opt?: {

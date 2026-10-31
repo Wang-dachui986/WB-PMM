@@ -46,6 +46,9 @@ func (s *Service) PollLogin(ctx context.Context, id string) (*LoginSession, erro
 		if err := s.store.SaveContext(operationCtx, acct); err != nil {
 			return "", err
 		}
+		s.mu.Lock()
+		delete(s.credits, acct.UID)
+		s.mu.Unlock()
 		justSaved = true
 		return baseName(acct.FilePath), nil
 	})
@@ -212,6 +215,9 @@ func (s *Service) SaveManualAuthContext(ctx context.Context, input ManualAuthInp
 	if err := s.store.SaveContext(ctx, acct); err != nil {
 		return &OpResult{UID: acct.UID, Action: "import", OK: false, Message: "保存失败: " + err.Error()}, nil
 	}
+	s.mu.Lock()
+	delete(s.credits, acct.UID)
+	s.mu.Unlock()
 	return &OpResult{
 		UID: acct.UID, Action: "import", OK: true,
 		Message: fmt.Sprintf("凭证已保存到 %s；重启网关后生效", baseName(acct.FilePath)),

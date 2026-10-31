@@ -108,12 +108,18 @@ func (s *Service) localProfile(uid string) (map[string]any, error) {
 		NeedsRefresh: a.NeedsRefresh(10 * time.Minute), RefreshToken: a.RefreshToken != "", Status: "unknown"}
 	out := map[string]any{"account": v}
 	s.mu.RLock()
-	if cached, ok := s.credits[uid]; ok && cached.credits != nil {
-		copy := *cached.credits
-		out["credits"] = &copy
-		v.LiveCredits = &copy.Remain
+	if cached, ok := s.credits[uid]; ok {
 		at := cached.at
 		v.CreditsAt = &at
+		v.CreditsStatus, v.CreditsError = cached.status, cached.err
+		if cached.err != "" {
+			out["credits_error"] = cached.err
+		}
+		if cached.credits != nil {
+			copy := *cached.credits
+			out["credits"] = &copy
+			v.LiveCredits = &copy.Remain
+		}
 	}
 	s.mu.RUnlock()
 	return out, nil

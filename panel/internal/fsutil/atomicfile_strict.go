@@ -11,6 +11,9 @@ import (
 
 // ReadFileStrict rejects symlinks and special files before reading any content.
 func ReadFileStrict(path string, limit int64) ([]byte, error) {
+	if err := CheckPrivateACL(path); err != nil {
+		return nil, err
+	}
 	f, err := openReadNoFollow(path)
 	if err != nil {
 		return nil, err
@@ -38,6 +41,9 @@ func ReadFileStrict(path string, limit int64) ([]byte, error) {
 // temporary-file IO. Rename failure is an error, including bind mounts.
 func WriteFileAtomicStrict(ctx context.Context, path string, raw []byte, perm os.FileMode, beforeCommit func() error) error {
 	dir := filepath.Dir(path)
+	if err := CheckPrivateACL(dir); err != nil {
+		return err
+	}
 	parent, err := os.Lstat(dir)
 	if err != nil {
 		return err
@@ -63,6 +69,9 @@ func WriteFileAtomicStrict(ctx context.Context, path string, raw []byte, perm os
 			if !info.Mode().IsRegular() {
 				return fmt.Errorf("写入目标不能是符号链接或非普通文件")
 			}
+			if err := CheckPrivateACL(path); err != nil {
+				return err
+			}
 		} else if !os.IsNotExist(err) {
 			return err
 		}
@@ -80,6 +89,9 @@ func WriteFileAtomicStrict(ctx context.Context, path string, raw []byte, perm os
 	}
 	defer os.Remove(tmp.Name())
 	defer tmp.Close()
+	if err := SecurePrivateACL(tmp.Name()); err != nil {
+		return err
+	}
 	if err := tmp.Chmod(perm); err != nil {
 		return err
 	}

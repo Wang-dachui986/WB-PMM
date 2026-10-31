@@ -590,7 +590,9 @@ func (s *Server) handlePricingDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
-	models, err := s.svc.Gateway().Models(r.Context())
+	// ?refresh=1：透传给网关，跳过模型缓存（面板「强制刷新模型列表」）。
+	refresh := r.URL.Query().Get("refresh") == "1"
+	models, err := s.svc.Gateway().Models(r.Context(), refresh)
 	if err != nil {
 		writeError(w, err)
 		return

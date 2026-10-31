@@ -97,11 +97,18 @@ export function observedCredits(a: { live_credits?: number; credits_at?: string 
     ? a.live_credits : undefined
 }
 
+export function creditStatusBadge(status?: string): { cls: string; text: string } {
+  if (status === 'ok') return { cls: 'badge-ok', text: '积分查询成功' }
+  if (status === 'auth_rejected') return { cls: 'badge-danger', text: '积分认证失败' }
+  if (status === 'failed') return { cls: 'badge-warn', text: '积分查询失败' }
+  return { cls: 'badge-warn', text: '积分未验证' }
+}
+
 /** 状态徽章配色与文案。 */
 export function statusBadge(status: string): { cls: string; text: string } {
   switch (status) {
     case 'healthy':
-      return { cls: 'badge-ok', text: '正常' }
+      return { cls: 'badge-ok', text: '可调度' }
     case 'cooling':
       return { cls: 'badge-warn', text: '冷却中' }
     case 'disabled':

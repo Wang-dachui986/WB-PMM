@@ -6,7 +6,7 @@ import { beginMaintenance, desktopCommand, hasDesktopBridge, type MaintenanceFlo
 import type { LoginSession, SessionInfo } from '../types'
 import { Alert, Spinner } from '../ui'
 
-type LoginFlow = { native?: MaintenanceFlow; lease?: MaintenanceLease; id?: string; cancelled: boolean; polling: boolean; closing?: Promise<void> }
+type LoginFlow = { native?: MaintenanceFlow; lease?: MaintenanceLease; id?: string; cancelled: boolean; polling: boolean; browserOpenFailed?: boolean; closing?: Promise<void> }
 
 const STEPS = ['发起授权', '浏览器登录', '保存凭证'] as const
 const saveErrorHints: Record<string, string> = {
@@ -82,7 +82,7 @@ export default function LoginWizard({
       const result = await api.loginPoll(id, flow.lease)
       if (!mounted.current || flowRef.current !== flow || flow.cancelled) return
       setSess(result)
-      setError(null)
+      if (!flow.browserOpenFailed || result.status !== 'pending') setError(null)
       if (result.status === 'success' && result.saved) {
         await closeFlow(flow, false)
         if (mounted.current && flowRef.current === flow) await onDone()
@@ -124,7 +124,16 @@ export default function LoginWizard({
         return
       }
       setSess(result)
-      if (result.status === 'pending') pollRef.current = window.setTimeout(() => void poll(result.id), 2500)
+      if (result.status === 'pending') {
+        pollRef.current = window.setTimeout(() => void poll(result.id), 2500)
+        if (desktop && !flow.cancelled && mounted.current && flowRef.current === flow) {
+          void desktopCommand('auth.openBrowser', { session_id: result.id }).catch((err) => {
+            if (!mounted.current || flowRef.current !== flow || flow.cancelled) return
+            flow.browserOpenFailed = true
+            setError(`未能自动打开浏览器：${err instanceof Error ? err.message : '打开授权页失败'}。请点击“打开授权页面”重试。`)
+          })
+        }
+      }
       else if (result.status === 'success' && result.saved) { await closeFlow(flow, false); if (mounted.current && flowRef.current === flow) await onDone() }
       else if (result.status !== 'success') await closeFlow(flow, true)
     } catch (err) {
@@ -158,9 +167,17 @@ export default function LoginWizard({
   }
 
   const openBrowser = async () => {
-    if (!sess) return
-    try { await desktopCommand('auth.openBrowser', { session_id: sess.id }) }
-    catch (err) { setError(err instanceof Error ? err.message : '打开授权页失败') }
+    const flow = flowRef.current
+    if (!sess || !flow || flow.cancelled) return
+    try {
+      await desktopCommand('auth.openBrowser', { session_id: sess.id })
+      if (mounted.current && flowRef.current === flow && !flow.cancelled) { flow.browserOpenFailed = false; setError(null) }
+    } catch (err) {
+      if (mounted.current && flowRef.current === flow && !flow.cancelled) {
+        flow.browserOpenFailed = true
+        setError(`${err instanceof Error ? err.message : '打开授权页失败'}。请点击“打开授权页面”重试。`)
+      }
+    }
   }
   const copyURL = async () => {
     if (!sess?.auth_url || desktop) return

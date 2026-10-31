@@ -19,7 +19,7 @@ import {
   fmtTime,
   Modal,
   Spinner,
-  statusBadge,
+  creditStatusBadge, statusBadge,
 } from '../ui'
 import TaskProgress from './TaskProgress'
 
@@ -54,7 +54,7 @@ export default function Accounts({ session }: { session: SessionInfo }) {
   const [detailUid, setDetailUid] = useState<string | null>(null)
   const [task, setTask] = useState<AccountTask | null>(null)
   const [showImport, setShowImport] = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState<Account | null>(null)
+  const [deleteTargets, setDeleteTargets] = useState<Account[]>([])
   const [deleting, setDeleting] = useState(false)
   const desktop = hasDesktopBridge()
   const maintenance = useRef<MaintenanceFlow | null>(null)
@@ -65,7 +65,10 @@ export default function Accounts({ session }: { session: SessionInfo }) {
   const finishMaintenance = useCallback(async (flow: MaintenanceFlow | null, cancel = false) => {
     if (!flow || maintenance.current !== flow) return
     if (cancel) await flow.cancel()
-    else await flow.end()
+    else {
+      try { await flow.end() }
+      catch { await flow.cancel() } // Cancelled admission has no lease to end; wait for native cleanup.
+    }
     if (maintenance.current === flow) {
       maintenance.current = null
       if (mounted.current) { setMaintaining(false); setBusyUid(null); setDeleting(false) }
@@ -145,7 +148,7 @@ export default function Accounts({ session }: { session: SessionInfo }) {
         case 'cooling':
           return a.status === 'cooling'
         case 'problem':
-          return a.status === 'disabled' || a.status === 'token_expired' || a.status === 'missing_credential'
+          return a.status === 'disabled' || a.status === 'token_expired' || a.status === 'missing_credential' || !!a.credits_error
         case 'expiring':
           return a.expired || a.needs_refresh
         default:
@@ -227,26 +230,51 @@ export default function Accounts({ session }: { session: SessionInfo }) {
   }
 
   const doDelete = async () => {
-    if (!deleteTarget) return
-    const target = deleteTarget
+    if (deleting || maintaining || deleteTargets.length === 0) return
+    const targets = [...deleteTargets]
     let flow: MaintenanceFlow | null = null
+    let removed = 0
+    setDeleting(true)
+    setNotice(null)
     try {
-      flow = startMaintenance('delete', [target.uid])
-      setDeleting(true)
+      flow = startMaintenance('delete', targets.map(a => a.uid))
       const lease = await flow?.ready
       if (!ownsFlow(flow)) return
-      const res = await api.deleteAccount(target.uid, lease)
-      if (!ownsFlow(flow)) return
-      setNotice({ kind: 'ok', text: res.message })
-      if (desktop) setNotes(previous => { const next = { ...previous }; delete next[target.uid]; return next })
-      setDeleteTarget(null)
-      await load(true)
+      for (const target of targets) {
+        if (!ownsFlow(flow)) break
+        const res = await api.deleteAccount(target.uid, lease)
+        if (!ownsFlow(flow)) return
+        if (!res.ok) throw new Error(`${displayName(target)}：${res.message}`)
+        removed++
+        setSelected(previous => { const next = new Set(previous); next.delete(target.uid); return next })
+        if (desktop) setNotes(previous => { const next = { ...previous }; delete next[target.uid]; return next })
+      }
+      if (ownsFlow(flow)) {
+        setNotice({ kind: 'ok', text: `已删除 ${removed} 个账号凭证` })
+        setDeleteTargets([])
+        await load(true)
+      }
     } catch (err) {
-      if (ownsFlow(flow)) setNotice({ kind: 'error', text: err instanceof Error ? err.message : '删除失败' })
+      if (ownsFlow(flow)) {
+        setNotice({ kind: removed ? 'warn' : 'error', text: `已确认删除 ${removed}/${targets.length} 个；其余未确认或未执行。${err instanceof Error ? err.message : '删除失败'}` })
+        setDeleteTargets([])
+        if (removed > 0) await load(true)
+      }
     } finally {
-      await finishMaintenance(flow).catch((err) => { if (ownsFlow(flow)) setNotice({ kind: 'error', text: err.message }) })
-      if (!desktop && ownsFlow(flow)) setDeleting(false)
+      await finishMaintenance(flow).catch(err => { if (ownsFlow(flow)) setNotice({ kind: 'error', text: `维护尚未结束：${err.message}，请点击取消维护重试` }) })
+      if (ownsFlow(flow) || ownsFlow(null)) { setDeleting(false); setDeleteTargets([]) }
     }
+  }
+
+  const selectForDeletion = () => {
+    const targets = accounts.filter(a => selected.has(a.uid))
+    if (targets.length !== selected.size || targets.some(a => !a.has_file)) {
+      setNotice({ kind: 'warn', text: '所选账号存在缺失凭证或列表已变化，请刷新后重新选择' }); return
+    }
+    if (targets.length < 1 || targets.length > 100) {
+      setNotice({ kind: 'warn', text: '请选择 1–100 个账号后再删除' }); return
+    }
+    setDeleteTargets(targets)
   }
 
   const setEnabled = async (a: Account) => {
@@ -278,7 +306,7 @@ export default function Accounts({ session }: { session: SessionInfo }) {
       throw error
     }
   }
-  const writeDisabled = session.read_only || maintaining
+  const writeDisabled = session.read_only || maintaining || deleting
 
   return (
     <>
@@ -350,6 +378,10 @@ export default function Accounts({ session }: { session: SessionInfo }) {
           <button className="btn" onClick={() => void runBatch('credits')} disabled={writeDisabled || accounts.length === 0}>
             批量查积分
           </button>
+          <button className="btn btn-danger" onClick={selectForDeletion}
+            disabled={writeDisabled || deleting || selected.size === 0 || (!desktop && !session.dangerous_ops)}>
+            批量删除{selected.size > 0 ? `（${selected.size}）` : ''}
+          </button>
           {selected.size > 0 && (
             <button className="btn btn-ghost" onClick={() => setSelected(new Set())}>
               清除选择
@@ -379,7 +411,7 @@ export default function Accounts({ session }: { session: SessionInfo }) {
             {desktop && <select aria-label="账号区域" value={region} onChange={event => setRegion(event.target.value)}><option value="all">全部区域</option><option value="cn">CN</option><option value="global">Global</option><option value="unknown">未知区域</option></select>}
             <select aria-label="账号状态" value={filter} onChange={(e) => setFilter(e.target.value as Filter)} style={{ width: 150 }}>
               <option value="all">全部</option>
-              <option value="healthy">仅正常</option>
+              <option value="healthy">网关可调度</option>
               <option value="cooling">仅冷却中</option>
               <option value="problem">仅异常</option>
               <option value="expiring">Token 需刷新</option>
@@ -455,6 +487,7 @@ export default function Accounts({ session }: { session: SessionInfo }) {
                       </td>
                       <td>
                         <Badge cls={b.cls}>{b.text}</Badge>
+                        <div style={{ marginTop: 4 }} title={a.credits_error}><Badge cls={creditStatusBadge(a.credits_status).cls}>{creditStatusBadge(a.credits_status).text}</Badge></div>
                         {a.cooling && (
                           <div className="text-faint" style={{ fontSize: 11.5, marginTop: 3 }}>
                             {coolKindText(a.cool_kind)} · 剩 {fmtDuration(a.cool_remaining_sec)}
@@ -528,7 +561,7 @@ export default function Accounts({ session }: { session: SessionInfo }) {
                           <button
                             className="btn btn-sm btn-danger"
                             disabled={busy || writeDisabled || (!desktop && !session.dangerous_ops) || !a.has_file}
-                            onClick={() => setDeleteTarget(a)}
+                            onClick={() => setDeleteTargets([a])}
                             title={
                               !a.has_file
                                 ? '该账号在网关池中但没有本地凭证文件，无法删除'
@@ -579,27 +612,21 @@ export default function Accounts({ session }: { session: SessionInfo }) {
         />
       )}
 
-      {deleteTarget && (
+      {deleteTargets.length > 0 && (
         <ConfirmDialog
-          title="删除账号凭证"
+          title={deleteTargets.length > 1 ? '批量删除账号凭证' : '删除账号凭证'}
           danger
-          confirmText="确认删除"
+          confirmText={deleteTargets.length > 1 ? `确认删除 ${deleteTargets.length} 个账号` : '确认删除'}
           busy={deleting}
-          onCancel={() => setDeleteTarget(null)}
+          onCancel={() => setDeleteTargets([])}
           onConfirm={() => void doDelete()}
-          message={
-            <>
-              <p style={{ marginTop: 0 }}>
-                即将删除账号 <strong>{displayName(deleteTarget)}</strong>
-                <span className="mono text-faint"> ({deleteTarget.uid.slice(0, 8)})</span> 的凭证文件
-                <span className="mono"> {deleteTarget.file_name}</span>。
-              </p>
-              <p>
-                该操作<strong className="text-danger">不可从上游恢复</strong>：删除后需要重新走 OAuth 登录才能找回该账号。
-                网关需重启后才会把它移出账号池。
-              </p>
-            </>
-          }
+          message={<>
+            <p>即将删除以下 {deleteTargets.length} 个账号的本地凭证，请核对名称和 UID：</p>
+            <ul style={{ maxHeight: 180, overflowY: 'auto' }}>{deleteTargets.map(a => (
+              <li key={a.uid}><strong>{displayName(a)}</strong> <span className="mono">{a.uid}</span></li>
+            ))}</ul>
+            <p>删除后需重新授权才能恢复这些本地凭证。{desktop ? '维护完成后按原有状态恢复 API。' : '网关需重启才能移出账号池。'}遇到失败会停止，未确认删除的账号保留选择。</p>
+          </>}
         />
       )}
     </>

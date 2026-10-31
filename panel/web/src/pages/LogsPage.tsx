@@ -131,7 +131,7 @@ export default function LogsPage() {
     } catch { if (mounted.current) setError('归档清理未完成，请关闭其他应用实例后重试') }
     finally { if (mounted.current) setClearing(false) }
   }
-  if (!hasDesktopBridge()) return <Alert kind="info">日志与诊断由 macOS 桌面应用提供。</Alert>
+  if (!hasDesktopBridge()) return <Alert kind="info">日志与诊断由 Windows 桌面应用提供。</Alert>
   return <>
     <div className="page-head"><div><h1>日志与诊断</h1><p>最近的安全事件；不包含授权凭据或聊天正文。</p></div>
       <div className="page-actions"><button className="btn" disabled={exporting} onClick={() => void prepareExport()}>准备诊断文件</button>

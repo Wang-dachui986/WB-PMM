@@ -236,3 +236,17 @@ func TestRegionBases(t *testing.T) {
 		t.Errorf("cn bases = %q/%q/%q", chat, billing, origin)
 	}
 }
+
+func TestPrivateErrorPreservesSafeDiagnosis(t *testing.T) {
+	c := &Client{PrivateErrors: true}
+	for _, status := range []int{401, 403, 404, 429, 500} {
+		err := c.privateError(&Error{Status: status, Msg: "secret-token-value"})
+		var ue *Error
+		if !errors.As(err, &ue) || ue.Status != status || strings.Contains(err.Error(), "secret-token-value") {
+			t.Fatalf("unsafe diagnosis: %v", err)
+		}
+		if status == 401 && !strings.Contains(err.Error(), "余额未知") {
+			t.Fatal("401 needs actionable diagnosis")
+		}
+	}
+}

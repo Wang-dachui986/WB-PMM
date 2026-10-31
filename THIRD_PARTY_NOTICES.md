@@ -10,6 +10,8 @@ WB-PMM 复用以下开源项目。上游 LICENSE 原文保留在其目录内；�
 - 本地目录：`gateway/`，许可证原文：`gateway/LICENSE`
 - 用途：OpenAI Chat Completions 兼容的本地 API 网关，作为应用内置的 `Contents/Helpers/wb2api`
 
+另外选择性吸收了 [HanawaBanana/workbuddy2api](https://github.com/HanawaBanana/workbuddy2api) 的 MIT 兼容补丁（检查基线 `af5e77947c93fd6b7f8b3815ee047d64e0b97752`），并保留其沿用的 Sliverkiss 版权原文；详见 [同步记录](docs/UPSTREAM-SYNC-20261017.md)。
+
 第三方 Go 依赖（`gateway/go.mod`）：
 
 | 模块 | 版本 | 许可证 |
@@ -29,7 +31,7 @@ WB-PMM 复用以下开源项目。上游 LICENSE 原文保留在其目录内；�
 - 本地目录：`panel/`，许可证原文：`panel/LICENSE`
 - 用途：管理面板后端与 React 前端，作为应用内置的 `Contents/Helpers/wbgui` 与 WKWebView 页面
 
-面板 Go 侧**无第三方依赖**（仅标准库）。前端依赖（`panel/web/package.json`）：
+Windows 适配在网关和面板增加 `golang.org/x/sys v0.30.0`（BSD-3-Clause），用于 Windows ACL；许可全文见 `licenses/x-sys.txt`。前端依赖（`panel/web/package.json`）：
 
 | 包 | 声明范围 | 锁文件解析 | 许可证 |
 |---|---|---|---|
@@ -50,6 +52,8 @@ WB-PMM 的新增原生外壳、桌面适配、界面及测试代码采用根目�
 `licenses/` 收录 Go 运行时、Go 依赖及前端运行时依赖的原始许可证。发布的应用在 `Contents/Resources/Legal/` 中随附这些许可和两个上游 LICENSE。
 
 ## 4. 使用限制说明
+
+Windows 原生外壳使用 .NET 10 / Windows Desktop Runtime（MIT）及 Microsoft WebView2 SDK（微软许可）。安装目录 `Legal/` 随附这两类运行组件的原始 LICENSE/NOTICE，以及 Go、前端、上游项目许可。WebView2 Runtime 为微软独立组件，通过官方安装程序部署，适用其自身许可。
 
 - 源码许可是**开源许可**，不等于上游服务的调用授权。用户须自行确保添加的上游账号为其
   **本人有权使用**的账号。

@@ -43,9 +43,9 @@ export default function Playground() {
   const selectedEffort = supportedEfforts.includes(reasoningEffort) ? reasoningEffort : ''
   useEffect(() => { setReasoningEffort('') }, [model])
 
-  const loadModels = async () => {
+  const loadModels = async (refresh = false) => {
     try {
-      const res = await api.models()
+      const res = await api.models(refresh)
       const list = res.data ?? []
       setModels(list)
       setModel(old => list.some(item => item.id === old) ? old : (list[0]?.id ?? ''))
@@ -186,7 +186,7 @@ export default function Playground() {
           <p>当前测试对话仅保存在本页内存中，离开页面或退出应用后清空</p>
         </div>
         <div className="page-actions">
-          <button className="btn" onClick={() => void loadModels()}>
+          <button className="btn" title="跳过网关缓存，立即从上游重新拉取" onClick={() => void loadModels(true)}>
             刷新模型列表
           </button>
           <button className="btn" onClick={clearChat} disabled={messages.length === 0}>
@@ -338,7 +338,7 @@ export default function Playground() {
               rows={3}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="输入消息… （⌘ / Ctrl + Enter 发送）"
+              placeholder="输入消息… （Ctrl + Enter 发送）"
               onCompositionStart={() => { composing.current = true }}
               onCompositionEnd={() => { composing.current = false }}
               onKeyDown={(e) => {
@@ -359,7 +359,7 @@ export default function Playground() {
                 发送
               </button>
             )}
-            <span className="hint">⌘ / Ctrl + Enter 快捷发送</span>
+            <span className="hint">Ctrl + Enter 快捷发送</span>
           </div>
         </div>
       </div>

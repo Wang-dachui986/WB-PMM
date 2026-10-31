@@ -24,7 +24,7 @@ func TestModelsPreservesOptionalMetadata(t *testing.T) {
 
 	c := New(srv.URL, func() string { return "synthetic-key" }, time.Second)
 	defer c.http.CloseIdleConnections()
-	models, err := c.Models(context.Background())
+	models, err := c.Models(context.Background(), false)
 	if err != nil || len(models) != 2 {
 		t.Fatalf("Models: %v, count=%d", err, len(models))
 	}
@@ -54,5 +54,27 @@ func TestModelsPreservesOptionalMetadata(t *testing.T) {
 		if _, ok := roundTrip[1][key]; ok {
 			t.Fatalf("missing metadata was invented: %s", key)
 		}
+	}
+}
+
+func TestModelsRefreshAddsQuery(t *testing.T) {
+	var queries []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		queries = append(queries, r.URL.RawQuery)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, func() string { return "synthetic-key" }, time.Second)
+	defer c.http.CloseIdleConnections()
+	if _, err := c.Models(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Models(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(queries, []string{"", "refresh=1"}) {
+		t.Fatalf("queries=%q want [\"\" \"refresh=1\"]", queries)
 	}
 }
