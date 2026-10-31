@@ -8,6 +8,42 @@
 
 本项目是社区软件，不是腾讯、WorkBuddy 或 CodeBuddy 的官方产品。使用者须持有并有权使用相应账号；模型、积分和服务规则由上游决定，软件不提供免费额度。
 
+## 界面预览
+
+以下为 macOS 界面截图。账号信息已打码，积分与 Token 数值为截图时的状态，不代表软件附带额度。
+
+### 仪表盘
+
+![仪表盘：网关状态、局域网地址与积分总览](docs/screenshots/2026-10-31/dashboard.png)
+
+<details>
+<summary>账号管理：凭证导入、批量维护与账号状态</summary>
+
+![账号管理](docs/screenshots/2026-10-31/accounts.png)
+
+</details>
+
+<details>
+<summary>Token 统计：时间与模型筛选、多种图表</summary>
+
+![Token 统计](docs/screenshots/2026-10-31/token-statistics.png)
+
+</details>
+
+<details>
+<summary>网关配置：局域网访问与自动签到</summary>
+
+![网关配置](docs/screenshots/2026-10-31/gateway-settings.png)
+
+</details>
+
+<details>
+<summary>API 与模型：协议端点、密钥与客户端填写说明</summary>
+
+![API 与模型](docs/screenshots/2026-10-31/api-models.png)
+
+</details>
+
 ## 下载与安装
 
 从 [GitHub Releases](https://github.com/Wang-dachui986/WB-PMM/releases/latest) 下载安装包及 `SHA256SUMS.txt`，不要从源码目录寻找安装程序。
