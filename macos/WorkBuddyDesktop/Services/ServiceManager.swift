@@ -1753,7 +1753,7 @@ final class ServiceManager: ObservableObject {
         let lanEnabled = committedSnapshot?.allowLAN ?? false
         dict["lan_enabled"] = lanEnabled
         if lanEnabled, gatewayProcess?.isRunning == true, let port = gatewayPort {
-            dict["lan_api_base_urls"] = PortInspector.lanIPv4Addresses().map { "http://\($0):\(port)/v1" }
+            dict["lan_api_base_urls"] = PortInspector.lanBaseURLs(port: port)
         } else { dict["lan_api_base_urls"] = [String]() }
         if let (process, start) = gatewayStartedAt, gatewayProcess === process, process.isRunning {
             dict["uptime_seconds"] = max(0, start.duration(to: .now).components.seconds)

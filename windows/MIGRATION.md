@@ -41,7 +41,7 @@ Windows 在独立本机工作目录进行，未向原始 Mac 源码、Git 或远
 | 调度/续接边界 | 原 Go 积分、账号池/冷却/在途请求/粘性会话策略，失败不假成功 | NOT_RUN | NOT_RUN |
 | 网关配置 | 端口、并发、超时、代理 TCP 检查、会话/签到设置 | NOT_RUN | NOT_RUN |
 | 配置事务 | prepare/commit/restore/finish、修订冲突、确认/取消、重启回滚 | NOT_RUN | NOT_RUN |
-| 局域网 | 默认关、私有 IPv4 地址提示、API 密钥鉴权、管理接口仍限本机 | NOT_RUN | NOT_RUN |
+| 局域网 | 默认关、电脑名 .local 与私有 IPv4 地址、同网段/IPv6 来源、请求记录、API 密钥鉴权、管理接口仍限本机、防火墙检查与 UAC 放行（专用网络、本地子网） | NOT_RUN | NOT_RUN |
 | API/密钥 | 三协议端点与填写说明、原生复制/轮换，Web 内容不读取明文密钥 | NOT_RUN | NOT_RUN |
 | 模型/聊天 | 中文模型名、模型能力、推理/输入/输出设置、流式/取消、工具及图片能力按上游 | NOT_RUN | NOT_RUN |
 | 协议兼容 | Chat Completions、Responses、Anthropic Messages；原协议限制保留 | NOT_RUN | NOT_RUN |

@@ -4,6 +4,7 @@ import { api } from '../api'
 import { desktopCommand, hasDesktopBridge, subscribeDesktopGatewayStatus } from '../desktopBridge'
 import type { DesktopConfigView, Model } from '../types'
 import { Alert, modelLabel, modelName, reasoningEffortLabel, Spinner } from '../ui'
+import { LanAccessLog } from './LanAccessLog'
 
 export function apiExample(baseURL: string, model: string): string {
   return `curl ${baseURL}/chat/completions \\\n  -H 'Authorization: Bearer YOUR_API_KEY' \\\n  -H 'Content-Type: application/json' \\\n  -d '${JSON.stringify({ model, messages: [{ role: 'user', content: '你好' }], stream: false }).split("'").join("'\\''")}'`
@@ -153,6 +154,8 @@ export default function ApiModelsPage() {
                 <span className="mono">{url}</span><button className="btn" aria-label={`复制局域网地址 ${index + 1}`} onClick={() => void copy(url)}>复制地址</button>
               </div>) : <p>未找到可用的局域网网卡，请连接 Wi-Fi 或以太网。</p>}
         <p className="hint">其他设备使用局域网地址与相同的 API Key；系统防火墙或访客网络隔离可能阻止连接。</p>
+        {lanUrls.some((url) => /^http:\/\/[^/]+\.local:/.test(url)) && <p className="hint">以 .local 结尾的电脑名地址在本机 IP 变化后仍然有效，推荐优先使用；对方设备无法解析时改用数字 IP 地址。</p>}
+        <LanAccessLog active={lanRunning && nativeStatus?.lan_enabled === true} />
       </div>}
       <div className="page-actions">
         <button data-guide="api-key" className="btn" disabled={!config?.key_configured || keyBusy} onClick={() => void copyKey()}>复制密钥</button>

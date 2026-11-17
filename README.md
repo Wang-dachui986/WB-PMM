@@ -50,8 +50,8 @@
 
 | 平台 | 当前安装包 | 系统要求 |
 | --- | --- | --- |
-| macOS | `WB-PMM-1.0.11-macos-arm64.pkg` | macOS 14+，Apple Silicon（M 系列）；不支持 Intel Mac |
-| Windows | `WB-PMM-Setup-1.0.16-x64-compile-check.exe` | Windows 10 22H2 / Windows 11，Intel/AMD x64 |
+| macOS | `WB-PMM-1.0.12-macos-arm64.pkg` | macOS 14+，Apple Silicon（M 系列）；不支持 Intel Mac |
+| Windows | `WB-PMM-Setup-1.0.17-x64-compile-check.exe` | Windows 10 22H2 / Windows 11，Intel/AMD x64 |
 
 - **Mac**：先从顶部菜单栏选择“完全退出”旧版，再运行 PKG，固定安装或覆盖 `/Applications/WB-PMM.app`。更新保留账号和设置，并迁移已有 Dock 入口。
 - **Windows**：运行 Setup，可选择安装位置，默认 `%LOCALAPPDATA%\Programs\WB-PMM`；安装后创建开始菜单与桌面快捷方式。覆盖升级保留账号和设置。
@@ -90,7 +90,7 @@
 - **API 与模型**：复制各协议端点、密钥轮换、模型列表与刷新、模型能力和推理档位展示。填写 1M 不会扩大上游真实上下文限制。
 - **Token 统计**：按日、周、月、年和模型筛选；方块热力图、扇形图、柱状图、曲线图自由切换。保留最近 400 天，仅累计实际返回的用量。[统计说明](docs/TOKEN-STATISTICS.md)
 - **网关配置**：端口、代理、超时、并发、会话保持，国内账号定时签到。限流时有账号冷却及保护逻辑，可用性仍以上游为准。
-- **局域网**：默认关闭；开启后同一可信网络的其他设备使用应用显示的局域网地址和相同 API Key。管理端点与凭证操作保持仅本机可访问。
+- **局域网**：Mac 或 Windows 都可做主机，默认关闭。开启后同一可信网络的其他设备使用应用显示的电脑名地址（IP 变化后仍有效）或局域网 IP 和相同 API Key；“最近的局域网请求”可看出请求是否到达、密钥是否正确。Windows 主机会引导添加仅限专用网络与本地子网的防火墙规则。管理端点与凭证操作保持仅本机可访问。
 - **桌面常驻**：首次引导可跳过和重播，菜单栏 / 托盘，关闭窗口继续运行，可选登录自启和随应用启动 API，日志与诊断。
 
 当前未内置公网穿透；局域网使用 HTTP。不要把管理面板或网关直接暴露公网，API Key 持有者可消耗账号池额度。

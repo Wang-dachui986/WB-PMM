@@ -75,6 +75,17 @@ static class Check
             Reject(() => BridgeValidation.Patch(patch), "string Boolean rejected");
             True(GatewayConfiguration.TryProxyEndpoint("http://127.0.0.1:7890", out _, out var port) && port == 7890, "TCP proxy endpoint");
             True(!GatewayConfiguration.TryProxyEndpoint("http://user@127.0.0.1:7890", out _, out _), "proxy credentials rejected");
+            True(LanFirewall.ParseCheck("noise\r\n{\"allow\":0,\"block\":2,\"public\":false,\"connected\":true}\r\n") is { NeedsRule: true, Block: 2 }, "firewall block rules need fixing");
+            True(LanFirewall.ParseCheck("{\"connected\":true,\"public\":true,\"block\":0,\"allow\":1}") is { NeedsRule: false, PublicNetwork: true }, "allow rule on public network");
+            True(LanFirewall.ParseCheck("{\"allow\":0,\"block\":0,\"public\":false,\"connected\":false}") is { NeedsRule: false }, "offline does not prompt");
+            True(LanFirewall.ParseCheck("{\"allow\":\"x\"}") is null && LanFirewall.ParseCheck("") is null, "unreadable firewall state ignored");
+            var odd = @"C:\Users\O'Brien\AppData\Local\Programs\WB-PMM\Helpers\wb2api.exe";
+            var allowScript = LanFirewall.AllowScript(odd);
+            True(allowScript.Contains("'C:\\Users\\O''Brien\\AppData") && allowScript.Contains("-Direction Inbound -Action Allow -Program $p -Protocol TCP -RemoteAddress LocalSubnet -Profile Private,Domain"), "allow rule scoped to program, local subnet, private networks");
+            True(!allowScript.Contains("Public") && !LanFirewall.CheckScript(odd).Contains("New-NetFirewallRule") && !LanFirewall.CheckScript(odd).Contains("Remove-NetFirewallRule"), "check script is read-only");
+            True(Encoding.Unicode.GetString(Convert.FromBase64String(LanFirewall.EncodedCommand(allowScript))) == allowScript, "encoded command round trip");
+            True(LanNames.HostLabel("DESKTOP-AB12CD") == "DESKTOP-AB12CD" && LanNames.HostLabel("office-pc.corp.example") == "office-pc", "computer name label");
+            True(LanNames.HostLabel("王的电脑") is null && LanNames.HostLabel("my_pc") is null && LanNames.HostLabel("-bad") is null && LanNames.HostLabel("") is null, "unsafe computer names skipped");
             if (args is ["--panel", var executable]) await CheckPanelInterop(executable, root);
             Console.WriteLine($"Windows core contract checks: PASS ({passed})");
         }

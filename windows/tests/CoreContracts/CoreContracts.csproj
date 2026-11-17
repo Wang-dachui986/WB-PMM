@@ -11,5 +11,6 @@
     <Compile Include="../../WBPMM/BridgeValidation.cs" Link="BridgeValidation.cs" />
     <Compile Include="../../WBPMM/PanelClient.cs" Link="PanelClient.cs" />
     <Compile Include="../../WBPMM/GatewayConfiguration.cs" Link="GatewayConfiguration.cs" />
+    <Compile Include="../../WBPMM/LanFirewall.cs" Link="LanFirewall.cs" />
   </ItemGroup>
 </Project>

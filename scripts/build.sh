@@ -13,7 +13,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GATEWAY="$ROOT/gateway"
 PANEL="$ROOT/panel"
 OUT="${OUT:-$HOME/workbuddy2api-build/bin}"
-VERSION="${VERSION:-1.0.11}"
+VERSION="${VERSION:-1.0.12}"
 
 # ── 工具链探测 ────────────────────────────────────────────────────────────────
 find_go() {

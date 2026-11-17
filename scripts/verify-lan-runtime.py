@@ -73,11 +73,16 @@ with tempfile.TemporaryDirectory(prefix="wbpmm-lan-") as directory:
                 status, body = request(args.lan_ip, "/v1/models", {"Authorization": f"Bearer {key}"})
                 assert status == 200 and not json.loads(body)["data"]
                 headers = {"Authorization": f"Bearer {key}", "X-WorkBuddy-Management-Key": management, "X-Forwarded-For": "127.0.0.1"}
-                for path in ("/healthz", "/status", "/v1/stats", "/admin/desktop/drain"):
+                for path in ("/healthz", "/status", "/v1/stats", "/v1/lan-access", "/admin/desktop/drain"):
                     assert request(args.lan_ip, path, headers)[0] == 403
                 for path in ("/v1/chat/completions", "/v1/responses", "/v1/messages"):
                     assert request(args.lan_ip, path, method="POST")[0] == 401
-                print("PASS LAN on: real socket access, API key validation, local-only management")
+                status, body = request("127.0.0.1", "/v1/lan-access", {"Authorization": f"Bearer {key}"})
+                log = json.loads(body)
+                assert status == 200 and log["lan_enabled"] is True
+                assert any(e["peer"] == args.lan_ip and e["result"] == "ok" for e in log["entries"])
+                assert log["totals"]["unauthorized"] >= 5 and log["totals"]["blocked_path"] >= 5
+                print("PASS LAN on: real socket access, API key validation, local-only management, LAN request log")
             else:
                 try:
                     request(args.lan_ip, "/v1/models")

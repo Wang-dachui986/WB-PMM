@@ -111,28 +111,111 @@ internal sealed class DesktopController : IAsyncDisposable
 
     private IEnumerable<string> LanBaseUrls()
     {
-        if (_committed?.AllowLan != true || _gateway?.IsRunning != true || _gatewayPort is not int port) yield break;
+        if (_committed?.AllowLan != true || _gateway?.IsRunning != true || _gatewayPort is not int port) return [];
+        var addresses = LanIPv4Addresses();
+        if (addresses.Count == 0) return [];
+        var urls = new List<string>();
+        // The computer name keeps working after the router hands out a new IP; peers that
+        // cannot resolve .local fall back to the numeric addresses listed after it.
+        if (LanHostName() is { } host) urls.Add($"http://{host}.local:{port}/v1");
+        urls.AddRange(addresses.Select(ip => $"http://{ip}:{port}/v1"));
+        return urls;
+    }
+
+    internal static string? LanHostName()
+    {
+        try { return LanNames.HostLabel(Dns.GetHostName()); }
+        catch { return null; }
+    }
+
+    /// <summary>Private IPv4 addresses of active adapters; adapters with a default gateway (the real LAN) first.</summary>
+    private static List<string> LanIPv4Addresses()
+    {
+        var found = new List<(bool Gateway, string Address)>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         NetworkInterface[] interfaces;
         try { interfaces = NetworkInterface.GetAllNetworkInterfaces(); }
-        catch { yield break; }
+        catch { return []; }
         foreach (var nic in interfaces)
         {
             if (nic.OperationalStatus != OperationalStatus.Up || nic.NetworkInterfaceType is NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel or NetworkInterfaceType.Ppp) continue;
             if (nic.Name.Contains("utun", StringComparison.OrdinalIgnoreCase)) continue;
-            UnicastIPAddressInformationCollection addresses;
-            try { addresses = nic.GetIPProperties().UnicastAddresses; }
+            IPInterfaceProperties properties;
+            try { properties = nic.GetIPProperties(); }
             catch { continue; }
-            foreach (var address in addresses)
+            var gateway = properties.GatewayAddresses.Any(g => g.Address.AddressFamily == AddressFamily.InterNetwork && !g.Address.Equals(IPAddress.Any));
+            foreach (var address in properties.UnicastAddresses)
             {
                 var ip = address.Address;
                 if (ip.AddressFamily != AddressFamily.InterNetwork) continue;
                 var octets = ip.GetAddressBytes();
                 if (!(octets[0] == 10 || octets[0] == 172 && octets[1] is >= 16 and <= 31 || octets[0] == 192 && octets[1] == 168)) continue;
                 var raw = ip.ToString();
-                if (seen.Add(raw)) yield return $"http://{raw}:{port}/v1";
+                if (seen.Add(raw)) found.Add((gateway, raw));
             }
         }
+        return found.OrderByDescending(item => item.Gateway).Select(item => item.Address).ToList();
+    }
+
+    // ── Windows 防火墙（局域网共享） ─────────────────────────────────────────
+    private bool _firewallDeclined;
+    private bool _publicNetworkWarned;
+    private int _firewallCheckRunning;
+
+    private void ScheduleLanFirewallCheck()
+    {
+        if (_firewallDeclined && _publicNetworkWarned) return;
+        if (Interlocked.Exchange(ref _firewallCheckRunning, 1) == 1) return;
+        NotifyUI(() => _ = CheckLanFirewallAsync());
+    }
+
+    private async Task CheckLanFirewallAsync()
+    {
+        try
+        {
+            var program = Path.Combine(_paths.Helpers, "wb2api.exe");
+            var state = await LanFirewall.CheckAsync(program, CancellationToken.None);
+            if (state is null) { _log.Record("app", "lan_firewall_unknown"); return; }
+            if (!state.Connected || IsShuttingDown || _committed?.AllowLan != true || ConfirmAsync is not { } confirm) return;
+            if (state.NeedsRule)
+            {
+                _log.Record("app", "lan_firewall_missing");
+                if (_firewallDeclined) return;
+                var detail = "已开启局域网访问，但 Windows 防火墙会拦截其他设备。确认后弹出管理员授权，只为内置网关放行：专用网络、本地子网。" +
+                    (state.PublicNetwork ? "当前网络是“公用网络”，还需在 Windows 网络设置中改为“专用网络”。" : "");
+                if (!await AskAsync(confirm, "允许局域网设备访问 API？", detail)) { _firewallDeclined = true; _log.Record("app", "lan_firewall_declined"); return; }
+                if (await LanFirewall.AllowAsync(program, CancellationToken.None))
+                {
+                    _log.Record("app", "lan_firewall_allowed");
+                    if (state.PublicNetwork && !_publicNetworkWarned) { _publicNetworkWarned = true; await OfferNetworkSettingsAsync(confirm); }
+                }
+                else
+                {
+                    _log.Record("app", "lan_firewall_failed");
+                    await AskAsync(confirm, "防火墙规则未添加", "已取消授权或添加失败。重启 API 后会再次提示；也可在 Windows 安全中心为 wb2api.exe 放行专用网络。");
+                }
+                return;
+            }
+            _log.Record("app", "lan_firewall_ready");
+            if (state.PublicNetwork && !_publicNetworkWarned) { _publicNetworkWarned = true; await OfferNetworkSettingsAsync(confirm); }
+        }
+        catch { _log.Record("app", "lan_firewall_failed"); }
+        finally { Interlocked.Exchange(ref _firewallCheckRunning, 0); }
+    }
+
+    private static async Task<bool> AskAsync(Func<string, string, CancellationToken, Task<bool>> confirm, string title, string detail)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+        try { return await confirm(title, detail, timeout.Token); }
+        catch { return false; }
+    }
+
+    private async Task OfferNetworkSettingsAsync(Func<string, string, CancellationToken, Task<bool>> confirm)
+    {
+        _log.Record("app", "lan_firewall_public");
+        if (!await AskAsync(confirm, "当前网络是公用网络", "Windows 会阻止其他设备连接公用网络上的本机 API。若这是可信的家庭或办公网络，请把它改为“专用网络”。确认后打开网络设置。")) return;
+        try { using var _ = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:network-status") { UseShellExecute = true }); }
+        catch { }
     }
 
     private void Publish()
@@ -261,7 +344,9 @@ internal sealed class DesktopController : IAsyncDisposable
                 {
                     _healthy = found.Healthy; _total = found.Total;
                     _gatewayState = found.Healthy > 0 ? "running_ready" : "running_unavailable";
-                    Publish(); StartHealthPolling(helper, snapshot.Port); return true;
+                    Publish(); StartHealthPolling(helper, snapshot.Port);
+                    if (snapshot.AllowLan) ScheduleLanFirewallCheck();
+                    return true;
                 }
                 await Task.Delay(200, ct);
             }

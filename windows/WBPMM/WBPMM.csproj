@@ -8,8 +8,8 @@
     <Nullable>enable</Nullable>
     <AssemblyName>WB-PMM</AssemblyName>
     <RootNamespace>WBPMM</RootNamespace>
-    <Version>1.0.16</Version>
-    <AssemblyVersion>1.0.16.1</AssemblyVersion>
+    <Version>1.0.17</Version>
+    <AssemblyVersion>1.0.17.1</AssemblyVersion>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon Condition="Exists('Assets/WB-PMM.ico')">Assets/WB-PMM.ico</ApplicationIcon>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>

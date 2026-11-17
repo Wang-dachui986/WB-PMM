@@ -1,14 +1,14 @@
 # WB-PMM Windows 10/11 x64
 
-本目录是 Windows 原生外壳与安装器，与 `macos/` 共用仓库根目录的 `gateway/` 和 `panel/`。Windows 当前源码版本 1.0.16。
+本目录是 Windows 原生外壳与安装器，与 `macos/` 共用仓库根目录的 `gateway/` 和 `panel/`。Windows 当前源码版本 1.0.17。
 
 ## 安装与升级
 
-运行 `WB-PMM-Setup-1.0.16-x64.exe`（开发候选文件名额外带 `-compile-check`）。首次安装可在目录选择页选择有写入权限的本地文件夹，默认 `%LOCALAPPDATA%\Programs\WB-PMM`，安装结束后在开始菜单和桌面各生成一个 WB-PMM 快捷方式，升级更新原快捷方式，卸载时移除。后续升级默认读取上次选择的位置，请求运行中的应用正常退出后原地覆盖。如需换盘，先卸载再选择新目录安装；账号数据仍保留。上一版若在快捷方式身份步骤失败且尚未完成注册，可直接运行新版安装器选择位置。若退出失败，安装中止，请完成正在执行的任务后重试。不要在运行中手工替换程序文件。
+运行 `WB-PMM-Setup-1.0.17-x64.exe`（开发候选文件名额外带 `-compile-check`）。首次安装可在目录选择页选择有写入权限的本地文件夹，默认 `%LOCALAPPDATA%\Programs\WB-PMM`，安装结束后在开始菜单和桌面各生成一个 WB-PMM 快捷方式，升级更新原快捷方式，卸载时移除。后续升级默认读取上次选择的位置，请求运行中的应用正常退出后原地覆盖。如需换盘，先卸载再选择新目录安装；账号数据仍保留。上一版若在快捷方式身份步骤失败且尚未完成注册，可直接运行新版安装器选择位置。若退出失败，安装中止，请完成正在执行的任务后重试。不要在运行中手工替换程序文件。
 
 账号、网关配置、偏好和安全日志放在 `%LOCALAPPDATA%\WB-PMM`，与安装目录分开。覆盖升级和卸载保留这份数据；卸载后重新安装可继续使用。不要把数据目录上传到仓库或发给别人。
 
-安装包包含 .NET 运行组件，无需单独安装 .NET。界面使用 Microsoft WebView2 Runtime：缺少时安装向导通过微软官方引导程序联网安装，失败则停止并提示。已有运行时不重复安装；离线电脑须提前安装 WebView2 Runtime。流程依据 [微软部署说明](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution)。应用运行不需要管理员权限；局域网访问如被 Windows 防火墙阻止，按验收说明为私有网络放行。
+安装包包含 .NET 运行组件，无需单独安装 .NET。界面使用 Microsoft WebView2 Runtime：缺少时安装向导通过微软官方引导程序联网安装，失败则停止并提示。已有运行时不重复安装；离线电脑须提前安装 WebView2 Runtime。流程依据 [微软部署说明](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution)。应用运行不需要管理员权限。开启局域网访问并启动 API 后，应用会检查 Windows 防火墙，缺少放行规则时询问是否添加（需管理员授权一次，仅放行内置网关、专用网络、本地子网）。
 
 当前仅面向 Intel/AMD x64，Windows 10 22H2 / Windows 11。尚未完成 Windows 实机验收，不能把交叉编译通过当作可发布结论。Windows 10 系统安全支持状态由微软的版本与授权政策决定。
 
@@ -20,7 +20,7 @@
 4. 如客户端要求完整端点，按协议填写 `/v1/chat/completions`、`/v1/responses` 或 `/v1/messages`。WorkBuddy 是否需要完整对话端点取决于「自定义协议」选项，不按国内/国际区分。
 5. 关闭主窗口会继续在通知区域后台运行；点托盘图标重新打开，选择「完全退出」停止应用与受管服务。
 6. 「应用设置」可分别控制随应用启动 API 和登录 Windows 后启动。首次安装不会自行开启登录启动。
-7. 「网关配置」开启局域网并保存应用后，同一网络的设备使用所显示的局域网地址和同一个 API 密钥。管理面板保持仅本机可访问；不要向互联网开放端口。
+7. 「网关配置」开启局域网并保存应用后，同一网络的设备使用所显示的局域网地址（电脑名 `.local` 地址或局域网 IP）和同一个 API 密钥；「API 与模型 → 最近的局域网请求」可确认请求是否到达。Windows 也可以作为客户端调用 Mac 主机的局域网地址。管理面板保持仅本机可访问；不要向互联网开放端口。
 
 自动签到在 API 运行期间按本机时区设定的小时执行，仅支持国内账号。100 个账号容量、批量余额查询、模型/推理/上下文设置、聊天测试、统计、日志与诊断使用现有业务页面。模型实际能力仍以上游返回为准，填写 1M 不会扩大上游的硬限制。
 
@@ -38,8 +38,8 @@ Windows PowerShell：
 macOS/Linux 维护者交叉打包（需要 .NET 10 SDK、Go、Node.js、NSIS 3 Unicode 的 `makensis`、Python 3）：
 
 ```bash
-OUT="$PWD/windows/dist/app-1.0.16" DOTNET=/path/to/dotnet GO=/path/to/go bash windows/build-cross.sh
-APP_DIR="$PWD/windows/dist/app-1.0.16" bash windows/package-cross.sh
+OUT="$PWD/windows/dist/app-1.0.17" DOTNET=/path/to/dotnet GO=/path/to/go bash windows/build-cross.sh
+APP_DIR="$PWD/windows/dist/app-1.0.17" bash windows/package-cross.sh
 ```
 
 - 版本号取自 `WBPMM/WBPMM.csproj` 的 `<Version>`；升版时同步改 `build-cross.sh` 与 `installer/WB-PMM.nsi` 里的默认值。`package-cross.sh` 会核对发布目录的 `WB-PMM.deps.json` 版本，防止打进旧产物。

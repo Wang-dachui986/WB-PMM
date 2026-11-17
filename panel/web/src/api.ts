@@ -149,6 +149,8 @@ export const api = {
   // refresh=true：网关跳过模型缓存，立即向上游重拉（新上架模型无需等 1 小时或重启）
   models: (refresh = false) => get<ModelsResponse>(refresh ? '/api/models?refresh=1' : '/api/models'),
   // 请求统计（按模型聚合 + 时间维度）+ 官方价换算
+  // 局域网：其他设备最近的请求（网关仅向本机提供）
+  lanAccess: () => get<import('./types').LanAccessLog>('/api/lan-access'),
   tokenHistory: (from: string, to: string) => get<import('./pages/tokenData').TokenHistory>(`/api/token-history?${new URLSearchParams({ from, to })}`),
   stats: (opt?: {
     mode?: 'peak' | 'offpeak'

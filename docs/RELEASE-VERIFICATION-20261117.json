@@ -1,0 +1,36 @@
+{
+  "date": "2026-11-17",
+  "change": "LAN access: computer-name (.local) address, same-subnet/IPv6 sources, LAN request log, Windows firewall rule prompt",
+  "source_checks": {
+    "gateway_go_test_all": "PASS",
+    "panel_go_test_all": "PASS",
+    "frontend_typecheck_and_build": "PASS",
+    "verify_m06_pages_webkit": "PASS",
+    "verify_lan_runtime_real_sockets": "PASS",
+    "csharp_core_contracts_with_go_panel": "PASS (43 checks, synthetic data)"
+  },
+  "macos": {
+    "version": "1.0.12",
+    "build": 13,
+    "file": "WB-PMM-1.0.12-macos-arm64.pkg",
+    "sha256": "781354d6cb11058287bb5f15ae1baa3a3a4c83d1cd5030c0c3e6bcd63811da76",
+    "native_build": "PASS",
+    "payload_matches_signed_app": "PASS",
+    "app_signature": "adhoc verified",
+    "pkg_signing": "unsigned",
+    "notarization": "NOT_DONE",
+    "install_runtime": "NOT_RUN"
+  },
+  "windows": {
+    "version": "1.0.17",
+    "file": "WB-PMM-Setup-1.0.17-x64-compile-check.exe",
+    "sha256": "857b480889186251dbd285e233d6db1117b0368c2bdbd601b8f605994b953223",
+    "windows_compile": "PASS (0 warnings)",
+    "nsis_compile": "PASS",
+    "firewall_prompt_and_uac": "NOT_RUN_ON_WINDOWS",
+    "windows_runtime": "NOT_RUN",
+    "authenticode_verification": "NOT_RUN_ON_MAC"
+  },
+  "second_device_lan_test": "NOT_RUN",
+  "scope": "No real credentials or upstream model calls used. Installed copy on this Mac was not replaced."
+}

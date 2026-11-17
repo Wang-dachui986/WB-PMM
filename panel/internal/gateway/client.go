@@ -568,6 +568,30 @@ func (c *Client) ResetStats(ctx context.Context) error {
 	return nil
 }
 
+// LANAccess returns the gateway's recent requests from other devices
+// (desktop LAN sharing). The gateway serves it to loopback callers only.
+func (c *Client) LANAccess(ctx context.Context) (json.RawMessage, error) {
+	resp, err := c.do(ctx, http.MethodGet, "/v1/lan-access", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("当前网关版本未提供局域网请求记录，请更新并重启 API")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("局域网请求记录不可用（HTTP %d），请确认 API 已启动", resp.StatusCode)
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, err
+	}
+	if !json.Valid(raw) {
+		return nil, fmt.Errorf("局域网请求记录格式无效")
+	}
+	return json.RawMessage(raw), nil
+}
+
 // TokenHistory returns gateway aggregates without contacting any model provider.
 func (c *Client) TokenHistory(ctx context.Context, from, to string) (json.RawMessage, error) {
 	q := url.Values{"from": {from}, "to": {to}}

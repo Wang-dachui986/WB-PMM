@@ -4,7 +4,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${OUT:-$ROOT/windows/dist/app}"
 DOTNET="${DOTNET:-dotnet}"
 GO="${GO:-go}"
-VERSION="${VERSION:-1.0.16}"
+VERSION="${VERSION:-1.0.17}"
 export DOTNET_CLI_TELEMETRY_OPTOUT=1
 export CGO_ENABLED=0 GOOS=windows GOARCH=amd64
 cd "$ROOT/panel/web"

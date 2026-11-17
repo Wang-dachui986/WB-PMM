@@ -15,7 +15,8 @@ internal sealed class SafeLog
         "process_started", "process_exited", "instance_started", "shutdown_completed", "configuration_ready",
         "configuration_failed", "panel_ready", "panel_startup_failed", "panel_session_ready", "panel_session_failed",
         "gateway_exited", "panel_exited", "port_occupied", "operation_rejected", "handshake_rejected",
-        "directory_preparation_failed", "webview_startup_failed", "desktop_startup_failed", "app_error", "app_warning", "app_info", "log_archives_cleared"
+        "directory_preparation_failed", "webview_startup_failed", "desktop_startup_failed", "app_error", "app_warning", "app_info", "log_archives_cleared",
+        "lan_firewall_ready", "lan_firewall_missing", "lan_firewall_unknown", "lan_firewall_declined", "lan_firewall_allowed", "lan_firewall_failed", "lan_firewall_public"
     };
 
     public SafeLog(AppPaths paths) => this.paths = paths;

@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import SystemConfiguration
 
 /// 端口占用探测（开发计划 §6.1、§8.2）。
 ///
@@ -71,6 +72,28 @@ enum PortInspector {
             result.insert(String(decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self))
         }
         return result.sorted()
+    }
+
+    /// Bonjour 电脑名（系统设置 → 通用 → 共享 → 本地主机名），用于 `<name>.local` 地址。
+    ///
+    /// 路由器重新分配 IP（例如私有 Wi-Fi 地址轮换后）时，数字地址会失效，电脑名地址仍然有效；
+    /// Windows 10/11、macOS、iOS 与多数 Linux 都能直接解析 `.local`。只接受合法 DNS 标签。
+    static func bonjourHostName() -> String? {
+        guard let name = SCDynamicStoreCopyLocalHostName(nil) as String?,
+              (1...63).contains(name.utf8.count), !name.hasPrefix("-"), !name.hasSuffix("-"),
+              name.unicodeScalars.allSatisfy({ ("a"..."z").contains($0) || ("A"..."Z").contains($0) || ("0"..."9").contains($0) || $0 == "-" })
+        else { return nil }
+        return name
+    }
+
+    /// 局域网 API 地址：先电脑名 `.local`，再各私有 IPv4 地址。没有可用网卡时为空。
+    static func lanBaseURLs(port: Int) -> [String] {
+        let addresses = lanIPv4Addresses()
+        guard !addresses.isEmpty else { return [] }
+        var urls = [String]()
+        if let host = bonjourHostName() { urls.append("http://\(host).local:\(port)/v1") }
+        urls += addresses.map { "http://\($0):\(port)/v1" }
+        return urls
     }
 
     /// 占用该端口的进程信息，**仅供展示**。

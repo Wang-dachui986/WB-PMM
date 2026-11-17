@@ -32,7 +32,7 @@ type Config struct {
 	// by the native launcher. In ordinary mode the existing shared API key
 	// behavior remains unchanged.
 	DesktopMode   bool
-	DesktopLAN    bool // Explicit opt-in; only private IPv4 inference clients are accepted.
+	DesktopLAN    bool // Explicit opt-in; local-network peers may call the inference routes (see desktop_lan.go).
 	ManagementKey string
 	MaxRotate     int // 单请求最多换号次数，默认 3
 	// Session 会话粘性路由器（可选；nil = 关闭粘性，纯 Pick 轮换）。
@@ -96,6 +96,8 @@ type Handler struct {
 	// rateChain 429 长重置连锁保护（ratechain.go）：短窗多号对同一模型返回长重置
 	// 429 → 激活期轮转遇长重置 429 直接终止（不把整个池拖进冷却）。进程内状态。
 	rateChain rateChainGate
+	// lanLog recent requests from other devices (desktop LAN sharing, desktop_lan.go).
+	lanLog lanAccessLog
 }
 
 // NewHandler 构建 handler。
@@ -123,6 +125,7 @@ func NewHandler(cfg Config) *Handler {
 	h.mux.HandleFunc("POST /v1/stats/reset", h.withAuth(h.statsReset))
 	if cfg.DesktopMode {
 		h.mux.HandleFunc("POST /admin/desktop/drain", h.withAuth(h.handleDesktopDrain))
+		h.mux.HandleFunc("GET /v1/lan-access", h.withAuth(h.lanAccess))
 	}
 	// 账号运维管理端点（默认关闭，config admin.enabled 开启后生效）。
 	// 路径用 {uid} 通配而非查询参数：uid 是账号身份，放进路径便于审计与直观。
@@ -140,33 +143,40 @@ func NewHandler(cfg Config) *Handler {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if h.cfg.DesktopMode && !h.desktopRequestAllowed(r) {
-		writeOpenAIError(w, http.StatusForbidden, "local_network_only", "this endpoint is not available from this network address")
+	if !h.cfg.DesktopMode {
+		h.mux.ServeHTTP(w, r)
 		return
 	}
-	h.mux.ServeHTTP(w, r)
-}
-
-func (h *Handler) desktopRequestAllowed(r *http.Request) bool {
 	// Trust the actual socket peer, never forwarding headers. Management and
 	// account/status data stay local even when the inference API is shared.
 	peer, err := netip.ParseAddrPort(r.RemoteAddr)
 	if err != nil {
-		return false
+		writeOpenAIError(w, http.StatusForbidden, "local_network_only", "this endpoint is not available from this network address")
+		return
 	}
 	ip := peer.Addr().Unmap()
 	if ip.IsLoopback() {
-		return true
+		h.mux.ServeHTTP(w, r)
+		return
 	}
-	if !h.cfg.DesktopLAN || !ip.Is4() || !ip.IsPrivate() {
-		return false
+	if !h.cfg.DesktopLAN || !lanPeerAllowed(ip) {
+		h.recordLAN(ip, r, http.StatusForbidden, "blocked_source")
+		writeOpenAIError(w, http.StatusForbidden, "local_network_only", "this network address is not on the gateway computer's local network")
+		return
 	}
-	switch r.Method + " " + r.URL.Path {
-	case "GET /v1/models", "POST /v1/chat/completions", "POST /v1/responses", "POST /v1/messages":
-		return true // Each route still enforces the inference API key.
-	default:
-		return false
+	if !lanRouteOpen(r) {
+		h.recordLAN(ip, r, http.StatusForbidden, "blocked_path")
+		writeOpenAIError(w, http.StatusForbidden, "local_network_only",
+			"this endpoint is only available on the gateway computer; other devices may use GET /v1/models, POST /v1/chat/completions, /v1/responses and /v1/messages")
+		return
 	}
+	rec := &lanStatusWriter{ResponseWriter: w}
+	h.mux.ServeHTTP(rec, r) // Each route still enforces the inference API key.
+	status := rec.status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	h.recordLAN(ip, r, status, lanResult(status))
 }
 
 func (h *Handler) withAuth(next http.HandlerFunc) http.HandlerFunc {

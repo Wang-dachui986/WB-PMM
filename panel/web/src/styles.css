@@ -1174,3 +1174,11 @@ tbody tr:hover {
     opacity: 1;
   }
 }
+
+/* 局域网请求记录（API 与模型 → 局域网访问） */
+.lan-log { margin-top: 14px; }
+.lan-log h4 { margin: 0 0 6px; font-size: 13px; font-weight: 500; }
+.lan-log-table { overflow-x: auto; max-height: 300px; overflow-y: auto; }
+.lan-log-table td { padding: 8px 12px; white-space: nowrap; }
+.lan-log-table td:last-child { white-space: normal; min-width: 200px; }
+.lan-log-problem { color: var(--danger, #c0392b); }

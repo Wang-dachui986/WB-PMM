@@ -18,7 +18,7 @@
   !error "PAYLOAD_MANIFEST is required"
 !endif
 !ifndef APP_VERSION
-  !define APP_VERSION "1.0.16"
+  !define APP_VERSION "1.0.17"
 !endif
 !include "${PAYLOAD_MANIFEST}"
 

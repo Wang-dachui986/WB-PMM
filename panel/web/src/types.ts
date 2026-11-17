@@ -416,3 +416,19 @@ export interface DesktopConfigView {
   safe_summary: { listen_host: string; schedules_disabled: boolean }
   key_configured: boolean
 }
+
+/** Gateway log of recent requests from other devices (local-only view). */
+export interface LanAccessEntry {
+  time: string
+  peer: string
+  method: string
+  path: string
+  status: number
+  result: 'ok' | 'unauthorized' | 'failed' | 'blocked_path' | 'blocked_source' | string
+}
+
+export interface LanAccessLog {
+  lan_enabled: boolean
+  entries: LanAccessEntry[] | null
+  totals: Record<string, number>
+}
